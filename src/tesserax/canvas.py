@@ -5,7 +5,7 @@ from .base import Group
 
 
 class Canvas(Group):
-    def __init__(self, width: float, height: float) -> None:
+    def __init__(self, width: float = 1000, height: float = 1000) -> None:
         super().__init__()
 
         self.width = width
@@ -31,10 +31,13 @@ class Canvas(Group):
             tight_bounds.height,
         )
 
+        self.width = tight_bounds.width
+        self.height = tight_bounds.height
+
         return self
 
     def _build_svg(self) -> str:
-        content = "\n  ".join(s._render() for s in self.shapes)
+        content = "\n  ".join(s.render() for s in self.shapes)
         defs_content = "\n    ".join(self._defs)
 
         vx, vy, vw, vh = self._viewbox

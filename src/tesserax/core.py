@@ -33,6 +33,21 @@ class Point:
         ry = nx * math.sin(rad) + ny * math.cos(rad)
         return Point(rx + tx, ry + ty)
 
+    def __add__(self, other: Point) -> Point:
+        return Point(self.x + other.x, self.y + other.y)
+
+    def __sub__(self, other: Point) -> Point:
+        return Point(self.x - other.x, self.y - other.y)
+
+    def dx(self, dx: float) -> Point:
+        return self + Point(dx, 0)
+
+    def dy(self, dx: float) -> Point:
+        return self + Point(dx, 0)
+
+    def d(self, dx: float, dy: float) -> Point:
+        return self + Point(dx, dy)
+
 
 @dataclass
 class Transform:
@@ -145,7 +160,7 @@ class Shape(ABC):
         self.transform = Transform()
         self.parent: Group | None = None
 
-        if gp := Group.current():
+        if (gp := Group.current()) is not None:
             gp.append(self)
 
     @abstractmethod
@@ -170,7 +185,7 @@ class Shape(ABC):
         """Wraps the inner content in a transform group."""
         t = self.transform
         ts = f' transform="translate({t.tx} {t.ty}) rotate({t.rotation}) scale({t.scale})"'
-        return f'<g{ts}>\n{self._render()}\n</g>'
+        return f"<g{ts}>\n{self._render()}\n</g>"
 
     def resolve(self, p: Point) -> Point:
         world_p = self.transform.map(p)

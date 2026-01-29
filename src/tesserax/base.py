@@ -133,10 +133,10 @@ class Group(Shape):
         if not self.shapes:
             return Bounds(0, 0, 0, 0)
 
-        return Bounds.union(*[s.local() for s in self.shapes])
+        return Bounds.union(*[s.bounds() for s in self.shapes])
 
     def _render(self) -> str:
-        return "\n".join(s._render() for s in self.shapes)
+        return "\n".join(s.render() for s in self.shapes)
 
     def __iadd__(self, other: Shape) -> Self:
         """Enables 'group += shape'."""

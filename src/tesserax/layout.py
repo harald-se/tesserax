@@ -34,11 +34,11 @@ class Row(Layout):
         self,
         shapes: list[Shape] | None = None,
         baseline: Baseline = "middle",
-        padding: float = 0,
+        gap: float = 0,
     ) -> None:
         super().__init__(shapes)
         self.baseline = baseline
-        self.padding = padding
+        self.gap = gap
 
     def do_layout(self) -> None:
         if not self.shapes:
@@ -70,7 +70,7 @@ class Row(Layout):
             shape.transform.tx = current_x - b.x
             shape.transform.ty = dy
 
-            current_x += b.width + self.padding
+            current_x += b.width + self.gap
 
 
 class Column(Layout):
