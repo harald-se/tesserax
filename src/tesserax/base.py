@@ -15,6 +15,7 @@ class Rect(Shape):
         stroke: str = "black",
         fill: str = "none",
     ) -> None:
+        super().__init__()
         self.x, self.y, self.w, self.h = x, y, w, h
         self.stroke, self.fill = stroke, fill
 
@@ -40,6 +41,7 @@ class Circle(Shape):
     def __init__(
         self, cx: float, cy: float, r: float, stroke: str = "black", fill: str = "none"
     ) -> None:
+        super().__init__()
         self.cx, self.cy, self.r = cx, cy, r
         self.stroke, self.fill = stroke, fill
 
@@ -62,6 +64,7 @@ class Ellipse(Shape):
         stroke: str = "black",
         fill: str = "none",
     ) -> None:
+        super().__init__()
         self.cx, self.cy, self.rx, self.ry = cx, cy, rx, ry
         self.stroke, self.fill = stroke, fill
 
@@ -78,6 +81,7 @@ class Line(Shape):
     def __init__(
         self, p1: Point, p2: Point, stroke: str = "black", width: float = 1.0
     ) -> None:
+        super().__init__()
         self.p1, self.p2 = p1, p2
         self.stroke, self.width = stroke, width
 
@@ -101,9 +105,19 @@ class Arrow(Line):
 
 
 class Group(Shape):
+    stack: list[list[Shape]] = []
+
+    @classmethod
+    def current(cls) -> list[Shape] | None:
+        if cls.stack:
+            return cls.stack[-1]
+
+        return None
+
     """A collection of shapes that behaves as a single unit."""
 
     def __init__(self, shapes: list[Shape] | None = None) -> None:
+        super().__init__()
         self.shapes: list[Shape] = []
 
         if shapes:
@@ -137,3 +151,10 @@ class Group(Shape):
         """Enables 'group += shape'."""
         self.shapes.append(other)
         return self
+
+    def __enter__(self):
+        self.stack.append([])
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.add(*self.stack.pop())

@@ -1,4 +1,5 @@
 from tesserax import Canvas, Rect, Arrow, Circle
+from tesserax.layout import Row
 
 # Initialize a canvas for an array visualization
 canvas = Canvas(width=400, height=200)
@@ -7,10 +8,12 @@ canvas = Canvas(width=400, height=200)
 cell1 = Circle(50, 80, 20)
 cell2 = Rect(150, 80, 40, 40)
 
+layout = Row().add(cell1, cell2)
+
 # Create a pointer using the bounds-to-bounds logic
-ptr = Arrow(cell1.local_bounds().padded(5).right, cell2.local_bounds().padded(5).left)
+ptr = Arrow(cell1.anchor("right"), cell2.anchor("left"))
 
 # Add all to canvas
-canvas.add(cell1, cell2, ptr)
+canvas.add(layout, ptr)
 
 canvas.fit(10).save("quicksort_partition.svg")

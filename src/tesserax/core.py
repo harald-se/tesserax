@@ -1,11 +1,12 @@
 from __future__ import annotations
 import copy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import math
-from typing import Literal, Self
-import typing
+from typing import Literal, Self, TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from .base import Group
 
 type Anchor = Literal[
     "top",
@@ -26,15 +27,28 @@ class Point:
     y: float
 
     def apply(self, tx=0.0, ty=0.0, r=0.0, s=1.0) -> Point:
-        """Applies transformation parameters to this point."""
         rad = math.radians(r)
-        # Scale
         nx, ny = self.x * s, self.y * s
-        # Rotate
         rx = nx * math.cos(rad) - ny * math.sin(rad)
         ry = nx * math.sin(rad) + ny * math.cos(rad)
-        # Translate
         return Point(rx + tx, ry + ty)
+
+
+@dataclass
+class Transform:
+    tx: float = 0.0
+    ty: float = 0.0
+    rotation: float = 0.0
+    scale: float = 1.0
+
+    def map(self, p: Point) -> Point:
+        return p.apply(self.tx, self.ty, self.rotation, self.scale)
+
+    def reset(self) -> None:
+        self.tx = 0.0
+        self.ty = 0.0
+        self.rotation = 0.0
+        self.scale = 1.0
 
 
 @dataclass(frozen=True)
@@ -76,21 +90,19 @@ class Bounds:
     def bottomright(self) -> Point:
         return Point(self.x + self.width, self.y + self.height)
 
-    def padded(self, amount: float) -> Bounds:
-        """Returns a new Bounds expanded by the given padding amount on all sides."""
-        return Bounds(
-            x=self.x - amount,
-            y=self.y - amount,
-            width=self.width + 2 * amount,
-            height=self.height + 2 * amount,
-        )
-
     @property
     def center(self) -> Point:
         return Point(self.x + self.width / 2, self.y + self.height / 2)
 
+    def padded(self, amount: float) -> Bounds:
+        return Bounds(
+            self.x - amount,
+            self.y - amount,
+            self.width + 2 * amount,
+            self.height + 2 * amount,
+        )
+
     def anchor(self, name: Anchor) -> Point:
-        """Returns a Point based on a string name for layout flexibility."""
         match name:
             case "top":
                 return self.top
@@ -115,7 +127,6 @@ class Bounds:
 
     @classmethod
     def union(cls, *bounds: Bounds) -> Bounds:
-        """Computes the minimal bounding box that contains all given bounds."""
         if not bounds:
             return Bounds(0, 0, 0, 0)
 
@@ -127,28 +138,25 @@ class Bounds:
         return Bounds(x_min, y_min, x_max - x_min, y_max - y_min)
 
 
-if typing.TYPE_CHECKING:
-    from .transform import Transform
-    from .base import Group
-
-
 class Shape(ABC):
-    """Base class for all renderable SVG components."""
     def __init__(self) -> None:
+        from .base import Group
+
         self.transform = Transform()
         self.parent: Group | None = None
 
+        if gp := Group.current():
+            gp.append(self)
+
     @abstractmethod
     def local_bounds(self) -> Bounds:
-        """Calculates the bounding box of the shape in the coordinate space."""
         pass
 
     def bounds(self) -> Bounds:
-        """Computes the AABB of the transformed local bounds."""
         base = self.local_bounds()
+
         corners = [base.topleft, base.topright, base.bottomleft, base.bottomright]
         transformed = [self.transform.map(p) for p in corners]
-
         xs = [p.x for p in transformed]
         ys = [p.y for p in transformed]
 
@@ -156,18 +164,15 @@ class Shape(ABC):
 
     @abstractmethod
     def render(self) -> str:
-        """Returns the SVG XML string representation of the shape."""
         pass
 
     def resolve(self, p: Point) -> Point:
-        """Recursively resolves a point to global coordinates."""
         world_p = self.transform.map(p)
         if self.parent:
             return self.parent.resolve(world_p)
         return world_p
 
     def anchor(self, name: Anchor) -> Point:
-        """Gets a global coordinate for a named anchor."""
         return self.resolve(self.local_bounds().anchor(name))
 
     def translated(self, dx: float, dy: float) -> Self:
@@ -183,13 +188,11 @@ class Shape(ABC):
         self.transform.scale += s
         return self
 
-    def __add__(self, other: Shape) -> Group:
-        """Enables the 'shape + shape' syntax to create groups."""
-        return Group().add(self, other)
-
-    def clone(self) -> typing.Self:
-        """
-        Returns a deep copy of the shape.
-        Essential for creating variations of a base structure without side effects.
-        """
+    def clone(self) -> Self:
         return copy.deepcopy(self)
+
+    def __add__(self, other: Shape) -> Group:
+        # Import internally to avoid circular import with base.py
+        from .base import Group
+
+        return Group().add(self, other)

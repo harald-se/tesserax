@@ -1,45 +1,28 @@
 from abc import abstractmethod
 from typing import Literal
-from .core import Shape, Bounds, Group, Anchor
+from .core import Shape, Bounds
+from .base import Group
 
 
 class Layout(Group):
-    """
-    A Group that automatically positions its children according to a strategy.
-    """
-
-    def __init__(
-        self,
-        shapes: list[Shape] | None = None,
-    ) -> None:
-        super().__init__(shapes=shapes)
-        shapes = shapes
+    def __init__(self, shapes: list[Shape] | None = None) -> None:
+        super().__init__()
         self._is_dirty = True
 
-    def _refresh(self) -> None:
-        if self._is_dirty:
-            self.shapes = self.layout(self.shapes)
-            self._is_dirty = False
+        if shapes:
+            self.add(*shapes)
 
     @abstractmethod
-    def layout(self, shapes: list[Shape]) -> list[Shape]:
+    def do_layout(self) -> None:
         """
-        Logic to return a list of Shapes (usually Transforms)
-        positioned correctly.
+        Implementation must iterate over self.shapes, RESET their transforms,
+        and then apply new translations.
         """
         ...
 
-    def local_bounds(self) -> Bounds:
-        self._refresh()
-        return super().local_bounds()
-
-    def render(self) -> str:
-        self._refresh()
-        return super().render()
-
     def add(self, *shapes: Shape) -> "Layout":
         super().add(*shapes)
-        self._is_dirty = True
+        self.do_layout()
         return self
 
 
@@ -49,57 +32,72 @@ type Baseline = Literal["start", "middle", "end"]
 class Row(Layout):
     def __init__(
         self,
-        baseline: Baseline,
-        padding: float = 0,
         shapes: list[Shape] | None = None,
+        baseline: Baseline = "middle",
+        padding: float = 0,
     ) -> None:
         super().__init__(shapes)
         self.baseline = baseline
         self.padding = padding
 
-    def layout(self, shapes: list[Shape]) -> list[Shape]:
-        if not shapes:
-            return []
+    def do_layout(self) -> None:
+        if not self.shapes:
+            return
 
-        # Find the maximum height to calculate baseline offsets
-        max_h = max(s.local_bounds().height for s in shapes)
+        # 1. First pass: Reset transforms so we get pure local bounds
+        for s in self.shapes:
+            s.transform.reset()
+
+        # 2. Calculate offsets based on the 'clean' shapes
+        max_h = max(s.local_bounds().height for s in self.shapes)
         current_x = 0.0
-        positioned_shapes: list[Shape] = []
 
-        for shape in shapes:
+        for shape in self.shapes:
             b = shape.local_bounds()
 
             # Calculate Y based on baseline
             match self.baseline:
                 case "start":
-                    dy = -b.y  # Align top edge to y=0
+                    dy = -b.y
                 case "middle":
-                    dy = max_h - (b.y + b.height)
-                case "end":
                     dy = (max_h / 2) - (b.y + b.height / 2)
+                case "end":
+                    dy = max_h - (b.y + b.height)
                 case _:
                     dy = 0
 
-            positioned_shapes.append(shape.translated(current_x - b.x, dy))
+            # 3. Apply the strict layout position
+            shape.transform.tx = current_x - b.x
+            shape.transform.ty = dy
+
             current_x += b.width + self.padding
 
-        return positioned_shapes
 
+class Column(Layout):
+    def __init__(
+        self,
+        shapes: list[Shape] | None = None,
+        align: Baseline = "middle",  # Changed name to align for clarity
+        padding: float = 0,
+    ) -> None:
+        super().__init__(shapes)
+        self.align = align
+        self.padding = padding
 
-class Column(Row):
-    def layout(self, shapes: list[Shape]) -> list[Shape]:
-        if not shapes:
-            return []
+    def do_layout(self) -> None:
+        if not self.shapes:
+            return
 
-        max_w = max(s.local_bounds().width for s in shapes)
+        for s in self.shapes:
+            s.transform.reset()
+
+        max_w = max(s.local_bounds().width for s in self.shapes)
         current_y = 0.0
-        positioned_shapes: list[Shape] = []
 
-        for shape in shapes:
+        for shape in self.shapes:
             b = shape.local_bounds()
 
-            # Calculate X based on horizontal baseline (left, center, right)
-            match self.baseline:
+            match self.align:
                 case "start":
                     dx = -b.x
                 case "end":
@@ -109,7 +107,7 @@ class Column(Row):
                 case _:
                     dx = 0
 
-            positioned_shapes.append(shape.translated(dx, current_y - b.y))
-            current_y += b.height + self.padding
+            shape.transform.tx = dx
+            shape.transform.ty = current_y - b.y
 
-        return positioned_shapes
+            current_y += b.height + self.padding
