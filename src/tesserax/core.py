@@ -2,7 +2,8 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, replace
 from abc import ABC, abstractmethod
-from typing import Literal
+import math
+from typing import Literal, Self
 import typing
 
 
@@ -23,6 +24,17 @@ type Anchor = Literal[
 class Point:
     x: float
     y: float
+
+    def apply(self, tx=0.0, ty=0.0, r=0.0, s=1.0) -> Point:
+        """Applies transformation parameters to this point."""
+        rad = math.radians(r)
+        # Scale
+        nx, ny = self.x * s, self.y * s
+        # Rotate
+        rx = nx * math.cos(rad) - ny * math.sin(rad)
+        ry = nx * math.sin(rad) + ny * math.cos(rad)
+        # Translate
+        return Point(rx + tx, ry + ty)
 
 
 @dataclass(frozen=True)
@@ -122,30 +134,54 @@ if typing.TYPE_CHECKING:
 
 class Shape(ABC):
     """Base class for all renderable SVG components."""
+    def __init__(self) -> None:
+        self.transform = Transform()
+        self.parent: Group | None = None
 
     @abstractmethod
-    def bounds(self) -> Bounds:
+    def local_bounds(self) -> Bounds:
         """Calculates the bounding box of the shape in the coordinate space."""
         pass
+
+    def bounds(self) -> Bounds:
+        """Computes the AABB of the transformed local bounds."""
+        base = self.local_bounds()
+        corners = [base.topleft, base.topright, base.bottomleft, base.bottomright]
+        transformed = [self.transform.map(p) for p in corners]
+
+        xs = [p.x for p in transformed]
+        ys = [p.y for p in transformed]
+
+        return Bounds(min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
 
     @abstractmethod
     def render(self) -> str:
         """Returns the SVG XML string representation of the shape."""
         pass
 
-    def translated(self, dx: float, dy: float) -> Transform:
-        return self.transformed(dx=dx, dy=dy)
+    def resolve(self, p: Point) -> Point:
+        """Recursively resolves a point to global coordinates."""
+        world_p = self.transform.map(p)
+        if self.parent:
+            return self.parent.resolve(world_p)
+        return world_p
 
-    def rotated(self, theta: float) -> Transform:
-        return self.transformed(r=theta)
+    def anchor(self, name: Anchor) -> Point:
+        """Gets a global coordinate for a named anchor."""
+        return self.resolve(self.local_bounds().anchor(name))
 
-    def scaled(self, s: float) -> Transform:
-        return self.transformed(s=s)
+    def translated(self, dx: float, dy: float) -> Self:
+        self.transform.tx += dx
+        self.transform.ty += dy
+        return self
 
-    def transformed(
-        self, dx: float = 0, dy: float = 0, r: float = 0, s: float = 1
-    ) -> Transform:
-        return Transform(self, tx=dx, ty=dy, rotation=r, scale=s)
+    def rotated(self, r: float) -> Self:
+        self.transform.rotation += r
+        return self
+
+    def scaled(self, s: float) -> Self:
+        self.transform.scale += s
+        return self
 
     def __add__(self, other: Shape) -> Group:
         """Enables the 'shape + shape' syntax to create groups."""

@@ -29,9 +29,9 @@ class Layout(Group):
         """
         ...
 
-    def bounds(self) -> Bounds:
+    def local_bounds(self) -> Bounds:
         self._refresh()
-        return super().bounds()
+        return super().local_bounds()
 
     def render(self) -> str:
         self._refresh()
@@ -62,12 +62,12 @@ class Row(Layout):
             return []
 
         # Find the maximum height to calculate baseline offsets
-        max_h = max(s.bounds().height for s in shapes)
+        max_h = max(s.local_bounds().height for s in shapes)
         current_x = 0.0
         positioned_shapes: list[Shape] = []
 
         for shape in shapes:
-            b = shape.bounds()
+            b = shape.local_bounds()
 
             # Calculate Y based on baseline
             match self.baseline:
@@ -91,12 +91,12 @@ class Column(Row):
         if not shapes:
             return []
 
-        max_w = max(s.bounds().width for s in shapes)
+        max_w = max(s.local_bounds().width for s in shapes)
         current_y = 0.0
         positioned_shapes: list[Shape] = []
 
         for shape in shapes:
-            b = shape.bounds()
+            b = shape.local_bounds()
 
             # Calculate X based on horizontal baseline (left, center, right)
             match self.baseline:

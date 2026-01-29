@@ -25,7 +25,7 @@ class Canvas:
 
     def fit(self, padding: float = 0) -> Canvas:
         """Reduces the viewBox to perfectly fit all added shapes."""
-        all_bounds = [s.bounds() for s in self._shapes]
+        all_bounds = [s.local_bounds() for s in self._shapes]
         tight_bounds = Bounds.union(*all_bounds).padded(padding)
 
         self._viewbox = (

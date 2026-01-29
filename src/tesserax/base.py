@@ -18,7 +18,7 @@ class Rect(Shape):
         self.x, self.y, self.w, self.h = x, y, w, h
         self.stroke, self.fill = stroke, fill
 
-    def bounds(self) -> Bounds:
+    def local_bounds(self) -> Bounds:
         return Bounds(self.x, self.y, self.w, self.h)
 
     def render(self) -> str:
@@ -43,7 +43,7 @@ class Circle(Shape):
         self.cx, self.cy, self.r = cx, cy, r
         self.stroke, self.fill = stroke, fill
 
-    def bounds(self) -> Bounds:
+    def local_bounds(self) -> Bounds:
         return Bounds(self.cx - self.r, self.cy - self.r, self.r * 2, self.r * 2)
 
     def render(self) -> str:
@@ -65,7 +65,7 @@ class Ellipse(Shape):
         self.cx, self.cy, self.rx, self.ry = cx, cy, rx, ry
         self.stroke, self.fill = stroke, fill
 
-    def bounds(self) -> Bounds:
+    def local_bounds(self) -> Bounds:
         return Bounds(self.cx - self.rx, self.cy - self.ry, self.rx * 2, self.ry * 2)
 
     def render(self) -> str:
@@ -81,7 +81,7 @@ class Line(Shape):
         self.p1, self.p2 = p1, p2
         self.stroke, self.width = stroke, width
 
-    def bounds(self) -> Bounds:
+    def local_bounds(self) -> Bounds:
         x = min(self.p1.x, self.p2.x)
         y = min(self.p1.y, self.p2.y)
         return Bounds(x, y, abs(self.p1.x - self.p2.x), abs(self.p1.y - self.p2.y))
@@ -104,26 +104,34 @@ class Group(Shape):
     """A collection of shapes that behaves as a single unit."""
 
     def __init__(self, shapes: list[Shape] | None = None) -> None:
-        self.shapes: list[Shape] = shapes or []
+        self.shapes: list[Shape] = []
+
+        if shapes:
+            self.add(*shapes)
 
     def add(self, *shapes: Shape) -> Group:
         """Adds a shape and returns self for chaining."""
         for shape in shapes:
+            if shape.parent:
+                raise ValueError("Cannot add one object to more than one group.")
+
             self.shapes.append(shape)
+            shape.parent = self
 
         return self
 
-    def bounds(self) -> Bounds:
+    def local_bounds(self) -> Bounds:
         """Computes the union of all child bounds."""
         if not self.shapes:
             return Bounds(0, 0, 0, 0)
 
-        return Bounds.union(*[s.bounds() for s in self.shapes])
+        return Bounds.union(*[s.local_bounds() for s in self.shapes])
 
     def render(self) -> str:
-        """Wraps children in a group tag."""
-        inner_svg = "\n  ".join(s.render() for s in self.shapes)
-        return f'<g class="tesserax-group">\n  {inner_svg}\n</g>'
+        t = self.transform
+        ts = f' transform="translate({t.tx} {t.ty}) rotate({t.rotation}) scale({t.scale})"'
+        inner = "\n".join(s.render() for s in self.shapes)
+        return f"<g{ts}>\n{inner}\n</g>"
 
     def __iadd__(self, other: Shape) -> Self:
         """Enables 'group += shape'."""

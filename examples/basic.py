@@ -8,7 +8,7 @@ cell1 = Circle(50, 80, 20)
 cell2 = Rect(150, 80, 40, 40)
 
 # Create a pointer using the bounds-to-bounds logic
-ptr = Arrow(cell1.bounds().padded(5).right, cell2.bounds().padded(5).left)
+ptr = Arrow(cell1.local_bounds().padded(5).right, cell2.local_bounds().padded(5).left)
 
 # Add all to canvas
 canvas.add(cell1, cell2, ptr)
