@@ -71,7 +71,8 @@ Layouts are a unique feature of Tesserax to automate the positioning of child el
 
 * **Row**: Aligns shapes horizontally. Baselines can be set to `start`, `middle`, or `end`.
 * **Column**: Aligns shapes vertically with `start`, `middle`, or `end` alignment.
-* **ForceLayout**: Typically used to draw graphs.
+* **HierarchicalLayout**: Useful for drawing trees, DAGs, automata, etc.
+* **ForceLayout**: Typically used to draw arbitrary graphs with a force-directed algorithm.
 
 ### Transforms
 
