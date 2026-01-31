@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Self
+from typing import Callable, Self
 from .core import Point, Shape, Bounds
 
 
@@ -70,30 +70,46 @@ class Ellipse(Shape):
 
 
 class Line(Shape):
-    """A basic connection between two points."""
+    """A basic connection between two points, supports dynamic point resolution."""
 
     def __init__(
-        self, p1: Point, p2: Point, stroke: str = "black", width: float = 1.0
+        self,
+        p1: Point | Callable[[], Point],
+        p2: Point | Callable[[], Point],
+        stroke: str = "black",
+        width: float = 1.0,
     ) -> None:
         super().__init__()
         self.p1, self.p2 = p1, p2
         self.stroke, self.width = stroke, width
 
+    def _resolve(self) -> tuple[Point, Point]:
+        """Resolves coordinates if they are provided as callables."""
+        p1 = self.p1() if callable(self.p1) else self.p1
+        p2 = self.p2() if callable(self.p2) else self.p2
+        return p1, p2
+
     def local(self) -> Bounds:
-        x = min(self.p1.x, self.p2.x)
-        y = min(self.p1.y, self.p2.y)
-        return Bounds(x, y, abs(self.p1.x - self.p2.x), abs(self.p1.y - self.p2.y))
+        p1, p2 = self._resolve()
+        x = min(p1.x, p2.x)
+        y = min(p1.y, p2.y)
+        return Bounds(x, y, abs(p1.x - p2.x), abs(p1.y - p2.y))
 
     def _render(self) -> str:
-        return f'<line x1="{self.p1.x}" y1="{self.p1.y}" x2="{self.p2.x}" y2="{self.p2.y}" stroke="{self.stroke}" stroke-width="{self.width}" />'
+        p1, p2 = self._resolve()
+        return (
+            f'<line x1="{p1.x}" y1="{p1.y}" x2="{p2.x}" y2="{p2.y}" '
+            f'stroke="{self.stroke}" stroke-width="{self.width}" />'
+        )
 
 
 class Arrow(Line):
-    """A line with an arrowhead, using the 'arrowhead' marker defined in Canvas."""
+    """A line with an arrowhead, resolving points dynamically during render."""
 
     def _render(self) -> str:
+        p1, p2 = self._resolve()
         return (
-            f'<line x1="{self.p1.x}" y1="{self.p1.y}" x2="{self.p2.x}" y2="{self.p2.y}" '
+            f'<line x1="{p1.x}" y1="{p1.y}" x2="{p2.x}" y2="{p2.y}" '
             f'stroke="{self.stroke}" stroke-width="{self.width}" marker-end="url(#arrowhead)" />'
         )
 

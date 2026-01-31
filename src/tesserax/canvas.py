@@ -19,8 +19,26 @@ class Canvas(Group):
         # Default viewbox is the full canvas size
         self._viewbox: tuple[float, float, float, float] = (0, 0, width, height)
 
-    def fit(self, padding: float = 0) -> Canvas:
-        """Reduces the viewBox to perfectly fit all added shapes."""
+    def _repr_svg_(self) -> str:
+        """Enables automatic rendering in Jupyter/Quarto environments."""
+        return self._build_svg()
+
+    def display(self) -> None:
+        """
+        Explicitly renders the SVG in supported interactive environments.
+
+        Uses IPython.display to render the SVG. If the environment does
+        not support rich display, it falls back to printing the SVG string.
+        """
+        from IPython.display import SVG, display as ipy_display
+
+        ipy_display(SVG(self._build_svg()))
+
+    def fit(self, padding: float = 0, crop: bool = True) -> Canvas:
+        """
+        Reduces the viewBox to perfectly fit all added shapes.
+        If crop is True (default), the width and height will also be adjusted.
+        """
         all_bounds = [s.bounds() for s in self.shapes]
         tight_bounds = Bounds.union(*all_bounds).padded(padding)
 
@@ -31,8 +49,9 @@ class Canvas(Group):
             tight_bounds.height,
         )
 
-        self.width = tight_bounds.width
-        self.height = tight_bounds.height
+        if crop:
+            self.width = tight_bounds.width
+            self.height = tight_bounds.height
 
         return self
 
