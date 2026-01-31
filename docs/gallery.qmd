@@ -87,12 +87,11 @@ with Canvas() as canvas:
         # Connect them (Topology)
         # q0 -> q1 -> q2
         graph.connect(states[0], states[1])
-        graph.connect(states[1], states[2])
+        graph.connect(states[0], states[2])
         # q2 -> q0 (cycle)
         graph.connect(states[2], states[0])
         # q2 -> q3 -> q4
         graph.connect(states[2], states[3])
-
         # Set the root
         graph.root(states[0])
 

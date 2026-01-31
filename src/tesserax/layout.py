@@ -340,7 +340,7 @@ class HierarchicalLayout(Layout):
             return r
 
         for r in self.roots:
-            get_rank(r)
+            ranks[r] = 0
 
         for s in self.shapes:
             get_rank(s)
