@@ -19,7 +19,9 @@ class Layout(Group):
         """
         ...
 
-    def add(self, *shapes: Shape, mode:Literal['strict', 'loose']="strict") -> "Layout":
+    def add(
+        self, *shapes: Shape, mode: Literal["strict", "loose"] = "strict"
+    ) -> "Layout":
         super().add(*shapes, mode=mode)
         self.do_layout()
         return self
@@ -164,7 +166,7 @@ class Grid(Layout):
                     dx = 0
                 elif self.halign == "end":
                     dx = cell_w - b.width
-                else: # center/middle
+                else:  # center/middle
                     dx = (cell_w - b.width) / 2
 
                 # Vertical Alignment
@@ -172,7 +174,7 @@ class Grid(Layout):
                     dy = 0
                 elif self.valign == "end":
                     dy = cell_h - b.height
-                else: # center/middle
+                else:  # center/middle
                     dy = (cell_h - b.height) / 2
 
                 # Apply final translation (Cell Origin + Internal Alignment - Local Origin)

@@ -131,7 +131,7 @@ class Group(Shape):
         if shapes:
             self.add(*shapes)
 
-    def add(self, *shapes: Shape, mode:Literal['strict', 'loose']="strict") -> Group:
+    def add(self, *shapes: Shape, mode: Literal["strict", "loose"] = "strict") -> Group:
         """Adds a shape and returns self for chaining."""
         for shape in shapes:
             if shape.parent:
