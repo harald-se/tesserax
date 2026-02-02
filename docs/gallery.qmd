@@ -142,3 +142,68 @@ with Canvas() as canvas:
 
 canvas.fit(padding=20).display()
 ```
+
+## Neural Networks
+
+The following is a more complicated example showing how to visualize typical neural network operations like a convolution.
+
+```{python}
+from tesserax import Canvas, Square, Text, Arrow, Group, Shape
+from tesserax.layout import Grid, Row
+
+
+def create_matrix(rows, cols, text, data=None, highlight_region=None, cell_size=40):
+    """
+    Creates a grid of squares with optional text and highlighting.
+    """
+    with Grid(cols=cols, gap=2) as grid:
+        for r in range(rows):
+            for c in range(cols):
+                val = data[r][c] if data else 0
+
+                # Determine styling based on the highlighted region
+                is_active = False
+                if highlight_region:
+                    r_start, c_start, r_end, c_end = highlight_region
+                    if r_start <= r <= r_end and c_start <= c <= c_end:
+                        is_active = True
+
+                # Visuals
+                color = "#e3f2fd" if is_active else "white"
+                stroke = "#1565c0" if is_active else "black"
+
+                # A Group holding the box and the number
+                with Group() as cell:
+                    box = Square(cell_size, fill=color, stroke=stroke)
+                    label = Text(str(val), size=14, font="monospace")
+
+                cell.align()
+
+    t = Text(text, size=16, anchor="middle")
+    t.align_to(grid, anchor="bottom", other_anchor="top").translated(0, -10)
+
+    return grid + t
+
+
+with Canvas() as canvas:
+    # Data Setup (Dummy Values)
+    input_data = [[1 if i == j else 0 for j in range(5)] for i in range(5)]
+    kernel_data = [[1, 0, 1], [0, 1, 0], [1, 0, 1]]
+    output_data = [[2, 1, 2], [1, 3, 1], [2, 1, 2]]
+
+    # We put three matrices in a row with the corresponding texts in between
+    with Row(gap=20):
+        input_grid = create_matrix(
+            5, 5, "Input (5x5)", input_data, highlight_region=(0, 0, 2, 2)
+        )
+        math_op = Text("∗", size=30)
+        kernel_grid = create_matrix(
+            3, 3, "Kernel (3x3)", kernel_data, highlight_region=(0, 0, 2, 2)
+        )
+        math_eq = Text("=", size=30)
+        output_grid = create_matrix(
+            3, 3, "Result (3x3)", output_data, highlight_region=(0, 0, 0, 0)
+        )
+
+canvas.fit(padding=40).display()
+```

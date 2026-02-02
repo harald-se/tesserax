@@ -9,6 +9,7 @@ from .base import Group
 class Layout(Group):
     def __init__(self, shapes: list[Shape] | None = None) -> None:
         super().__init__(shapes)
+        self.do_layout()
 
     @abstractmethod
     def do_layout(self) -> None:
@@ -18,8 +19,8 @@ class Layout(Group):
         """
         ...
 
-    def add(self, *shapes: Shape) -> "Layout":
-        super().add(*shapes)
+    def add(self, *shapes: Shape, mode:Literal['strict', 'loose']="strict") -> "Layout":
+        super().add(*shapes, mode=mode)
         self.do_layout()
         return self
 
@@ -86,6 +87,98 @@ class Column(Layout):
 
         # 2. Align along the cross axis (X)
         self.align(axis="horizontal", anchor=anchor_map[self.align_mode])
+
+
+class Grid(Layout):
+    def __init__(
+        self,
+        shapes: list[Shape] | None = None,
+        cols: int = 1,
+        gap: float | tuple[float, float] = 0.0,
+        halign: Align = "middle",
+        valign: Align = "middle",
+    ) -> None:
+        self.cols = cols
+        self.gap = gap if isinstance(gap, tuple) else (gap, gap)
+        self.halign = halign
+        self.valign = valign
+        super().__init__(shapes)
+
+    def do_layout(self) -> None:
+        if not self.shapes:
+            return
+
+        # 1. Matrix Organization
+        # Split shapes into rows of length self.cols
+        rows = [
+            self.shapes[i : i + self.cols]
+            for i in range(0, len(self.shapes), self.cols)
+        ]
+
+        # 2. Measure Tracks (Intrinsic Sizing)
+        # col_widths[c] = max width of any shape in column c
+        col_widths = [0.0] * self.cols
+        # row_heights[r] = max height of any shape in row r
+        row_heights = [0.0] * len(rows)
+
+        for r, row_shapes in enumerate(rows):
+            for c, shape in enumerate(row_shapes):
+                # Reset transform to get intrinsic bounds
+                shape.transform.reset()
+                b = shape.local()
+                col_widths[c] = max(col_widths[c], b.width)
+                row_heights[r] = max(row_heights[r], b.height)
+
+        # 3. Calculate Cell Positions
+        # cum_x[c] is the starting X coordinate of column c
+        cum_x = [0.0]
+        for w in col_widths[:-1]:
+            cum_x.append(cum_x[-1] + w + self.gap[0])
+
+        # cum_y[r] is the starting Y coordinate of row r
+        cum_y = [0.0]
+        for h in row_heights[:-1]:
+            cum_y.append(cum_y[-1] + h + self.gap[1])
+
+        # 4. Position and Align Shapes
+        # We need a map to convert user's "align" (e.g. "center")
+        # to the specific point on the shape/cell bounds.
+        # Simple approach: Calculate cell box, use shape.align_to(cell_box) logic.
+
+        for r, row_shapes in enumerate(rows):
+            for c, shape in enumerate(row_shapes):
+                # Define the cell's rigid boundary
+                cell_x = cum_x[c]
+                cell_y = cum_y[r]
+                cell_w = col_widths[c]
+                cell_h = row_heights[r]
+
+                # Current shape bounds (at 0,0)
+                b = shape.local()
+
+                # Calculate offsets within the cell based on alignment
+                dx, dy = 0.0, 0.0
+
+                # Horizontal Alignment
+                if self.halign == "start":
+                    dx = 0
+                elif self.halign == "end":
+                    dx = cell_w - b.width
+                else: # center/middle
+                    dx = (cell_w - b.width) / 2
+
+                # Vertical Alignment
+                if self.valign == "start":
+                    dy = 0
+                elif self.valign == "end":
+                    dy = cell_h - b.height
+                else: # center/middle
+                    dy = (cell_h - b.height) / 2
+
+                # Apply final translation (Cell Origin + Internal Alignment - Local Origin)
+                # Note: b.x/b.y handles shapes not centered at 0,0 locally
+                shape.transform.tx = cell_x + dx - b.x
+                shape.transform.ty = cell_y + dy - b.y
 
 
 class ForceLayout(Layout):

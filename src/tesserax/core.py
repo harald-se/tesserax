@@ -238,3 +238,30 @@ class Shape(ABC):
         from .base import Group
 
         return Group().add(self, other)
+
+    def align_to(
+        self,
+        other: Shape,
+        anchor: Anchor,
+        other_anchor: Anchor | None = None,
+    ) -> Self:
+        """
+        Aligns this shape to another shape.
+
+        Moves this shape so that its 'anchor' point coincides with
+        'other_anchor' on the target shape.
+        """
+        target_anchor = other_anchor or anchor
+        return self.move_to(other.anchor(target_anchor), anchor)
+
+    def move_to(self, target: Point, anchor: Anchor = "center") -> Self:
+        """
+        Moves the shape so that its specified anchor is at the target Point.
+        """
+        p_self = self.anchor(anchor)
+        diff = target - p_self
+
+        self.transform.tx += diff.x
+        self.transform.ty += diff.y
+
+        return self

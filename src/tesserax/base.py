@@ -131,15 +131,22 @@ class Group(Shape):
         if shapes:
             self.add(*shapes)
 
-    def add(self, *shapes: Shape) -> Group:
+    def add(self, *shapes: Shape, mode:Literal['strict', 'loose']="strict") -> Group:
         """Adds a shape and returns self for chaining."""
         for shape in shapes:
             if shape.parent:
-                raise ValueError("Cannot add one object to more than one group.")
+                if mode == "strict":
+                    raise RuntimeError("This shape already has a parent")
+                else:
+                    continue
 
             self.shapes.append(shape)
             shape.parent = self
 
+        return self
+
+    def remove(self, shape: Shape) -> Self:
+        self.shapes.remove(shape)
         return self
 
     def local(self) -> Bounds:
@@ -162,7 +169,7 @@ class Group(Shape):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.add(*self.stack.pop())
+        self.add(*self.stack.pop(), mode="loose")
 
     def align(
         self,
