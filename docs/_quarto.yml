@@ -9,7 +9,7 @@ website:
       - href: index.qmd
         text: Home
       - href: core.qmd
-        text: Core Concepts
+        text: User Guide
       - href: gallery.qmd
         text: Gallery
 

@@ -1,4 +1,4 @@
-This "Core Concepts" guide will walk you through building a scene from scratch, demonstrating how **Tesserax** handles shapes, positioning, and composition.
+This guide will walk you through building a scene from scratch, demonstrating how **Tesserax** handles shapes, positioning, and composition.
 
 ## The Canvas and the First Shape
 
@@ -187,8 +187,8 @@ For many diagrams, you simply want to connect a sequence of points. The `Polylin
 Its most powerful feature is the `smoothness` parameter. Instead of manually calculating Bezier control points to round a corner, you can simply tell `Polyline` to blend the corners for you.
 
 * `smoothness=0`: Sharp corners (standard polygon).
-* `smoothness=1`: Maximum rounding (spline-like).
 * `smoothness=0.2`: Subtle rounded corners (like a modern UI box).
+* `smoothness=1`: Maximum rounding (spline-like).
 
 ```{python}
 from tesserax import Canvas, Polyline, Point
