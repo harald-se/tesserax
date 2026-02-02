@@ -2,7 +2,7 @@ from abc import abstractmethod
 from collections import defaultdict
 import math
 from typing import Literal, Self
-from .core import Shape, Bounds
+from .core import Anchor, Shape, Bounds
 from .base import Group
 
 
@@ -32,81 +32,68 @@ class Row(Layout):
         self,
         shapes: list[Shape] | None = None,
         align: Align = "middle",
-        gap: float = 0,
+        gap: float = 0.0,
+        width: float | None = None,
+        mode: Literal["tight", "space-between", "space-around"] = "tight",
     ) -> None:
-        self.align = align
+        self.align_mode = align
         self.gap = gap
+        self.width = width
+        self.mode = mode
         super().__init__(shapes)
 
     def do_layout(self) -> None:
-        if not self.shapes:
-            return
+        # Map Row's 'align' terminology to the Group's 'anchor' terminology
+        anchor_map: dict[Align, Anchor] = {
+            "start": "top",
+            "middle": "center",
+            "end": "bottom"
+        }
 
-        # 1. First pass: Reset transforms so we get pure local bounds
-        for s in self.shapes:
-            s.transform.reset()
+        # 1. Distribute along the flow axis (X)
+        self.distribute(
+            axis="horizontal",
+            size=self.width,
+            mode=self.mode,
+            gap=self.gap
+        )
 
-        # 2. Calculate offsets based on the 'clean' shapes
-        max_h = max(s.local().height for s in self.shapes)
-        current_x = 0.0
-
-        for shape in self.shapes:
-            b = shape.local()
-
-            # Calculate Y based on baseline
-            match self.align:
-                case "start":
-                    dy = -b.y
-                case "middle":
-                    dy = (max_h / 2) - (b.y + b.height / 2)
-                case "end":
-                    dy = max_h - (b.y + b.height)
-                case _:
-                    dy = 0
-
-            # 3. Apply the strict layout position
-            shape.transform.tx = current_x - b.x
-            shape.transform.ty = dy
-
-            current_x += b.width + self.gap
+        # 2. Align along the cross axis (Y)
+        self.align(axis="vertical", anchor=anchor_map[self.align_mode])
 
 
-class Column(Row):
+class Column(Layout):
     def __init__(
         self,
         shapes: list[Shape] | None = None,
         align: Align = "middle",
-        gap: float = 0,
+        gap: float = 0.0,
+        height: float | None = None,
+        mode: Literal["tight", "space-between", "space-around"] = "tight",
     ) -> None:
-        super().__init__(shapes, align, gap)
+        self.align_mode = align
+        self.gap = gap
+        self.height = height
+        self.mode = mode
+        super().__init__(shapes)
 
     def do_layout(self) -> None:
-        if not self.shapes:
-            return
+        anchor_map: dict[Align, Anchor] = {
+            "start": "left",
+            "middle": "center",
+            "end": "right"
+        }
 
-        for s in self.shapes:
-            s.transform.reset()
+        # 1. Distribute along the flow axis (Y)
+        self.distribute(
+            axis="vertical",
+            size=self.height,
+            mode=self.mode,
+            gap=self.gap
+        )
 
-        max_w = max(s.local().width for s in self.shapes)
-        current_y = 0.0
-
-        for shape in self.shapes:
-            b = shape.local()
-
-            match self.align:
-                case "start":
-                    dx = -b.x
-                case "end":
-                    dx = max_w - (b.x + b.width)
-                case "middle":
-                    dx = (max_w / 2) - (b.x + b.width / 2)
-                case _:
-                    dx = 0
-
-            shape.transform.tx = dx
-            shape.transform.ty = current_y - b.y
-
-            current_y += b.height + self.gap
+        # 2. Align along the cross axis (X)
+        self.align(axis="horizontal", anchor=anchor_map[self.align_mode])
 
 
 class ForceLayout(Layout):

@@ -53,9 +53,28 @@ canvas.fit(padding=10).display()
 
 ```
 
+## Grouping and Aligning Shapes
+
+The `Group` class acts a container that has control over its children positions, so you can align and layout shapes easily with a procedural API.
+
+```{python}
+from tesserax import Canvas, Rect, Circle, Square, Group
+
+with Canvas() as canvas:
+    with Group() as g:
+        Rect(100, 50, fill="lightblue")
+        Circle(30, fill="salmon")
+        Square(40, fill="pink")
+
+    g.align("vertical", "center").distribute("horizontal", gap=10)
+
+canvas.fit(padding=10).display()
+
+```
+
 ## Simplifying with Layouts
 
-Manually calculating offsets (like the `150, 25` above) becomes tedious in complex diagrams. **Layouts** automate this positioning. The `Row` layout arranges its children horizontally with an optional `gap`.
+Manually calculating offsets or calling procedural alignment becomes tedious in complex diagrams. **Layouts** automate this positioning. The `Row` layout arranges its children horizontally with an optional `gap`. The `Column` does so vertically.
 
 ```{python}
 from tesserax import Canvas, Rect, Circle
@@ -63,9 +82,10 @@ from tesserax.layout import Row
 
 with Canvas() as canvas:
     # Row is also a context manager
-    with Row(gap=20):
+    with Row(gap=10):
         Rect(100, 50, fill="lightblue")
         Circle(30, fill="salmon")
+        Square(40, fill="pink")
 
 canvas.fit(padding=10).display()
 
@@ -128,7 +148,7 @@ with Canvas() as canvas:
     # Even though c1 is inside a rotated row, c1.anchor("right")
     # returns the correct global coordinate for the arrow.
     Arrow(
-        c1.anchor("top").dy(5),
+        c1.anchor("top").dy(-5),
         target.anchor("left").dx(-5),
         stroke="grey",
         width=2,

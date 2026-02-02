@@ -194,6 +194,65 @@ class Group(Shape):
 
         return self
 
+    def distribute(
+        self,
+        axis: Literal["horizontal", "vertical"],
+        size: float | None = None,
+        mode: Literal["tight", "space-between", "space-around"] = "tight",
+        gap: float = 0.0,
+    ) -> Self:
+        """
+        Distributes children along an axis using rigid or flexible spacing.
+        """
+        if not self.shapes:
+            return self
+
+        # 1. Reset and Measure
+        for s in self.shapes:
+            if isinstance(s, Spring):
+                s._size = 0.0
+
+        springs = [s for s in self.shapes if isinstance(s, Spring)]
+        total_flex = sum(s.flex for s in springs)
+        n = len(self.shapes)
+
+        # 2. Calculate Spacing Logic
+        is_horiz = axis == "horizontal"
+        rigid_total = sum(s.local().width if is_horiz else s.local().height for s in self.shapes if not isinstance(s, Spring))
+
+        effective_gap = gap
+        start_offset = 0.0
+        spring_unit = 0.0
+
+        if size is not None:
+            if springs:
+                # Springs take all space not occupied by rigid shapes and fixed gaps
+                remaining = size - rigid_total - (gap * (n - 1))
+                spring_unit = max(0, remaining / total_flex) if total_flex > 0 else 0
+            elif mode == "space-between" and n > 1:
+                effective_gap = (size - rigid_total) / (n - 1)
+            elif mode == "space-around":
+                effective_gap = (size - rigid_total) / n
+                start_offset = effective_gap / 2
+
+        # 3. Apply Translations
+        cursor = start_offset
+        for s in self.shapes:
+            b = s.local()
+
+            if isinstance(s, Spring):
+                s._size = s.flex * spring_unit
+                cursor += s._size
+            else:
+                if is_horiz:
+                    s.transform.tx = cursor - b.x
+                    cursor += b.width + effective_gap
+                else:
+                    s.transform.ty = cursor - b.y
+                    cursor += b.height + effective_gap
+
+        return self
+
 
 class Path(Shape):
     """
@@ -457,3 +516,54 @@ class Text(Shape):
             f'fill="{self.fill}" text-anchor="{self._anchor}" dominant-baseline="middle">'
             f"{self.content}</text>"
         )
+
+
+class Spacer(Shape):
+    """
+    An invisible rectangular shape used to reserve fixed space in layouts.
+    """
+
+    def __init__(self, w: float, h: float) -> None:
+        super().__init__()
+        self.w, self.h = w, h
+
+    def local(self) -> Bounds:
+        return Bounds(0, 0, self.w, self.h)
+
+    def _render(self) -> str:
+        return ""
+
+
+class Ghost(Shape):
+    """
+    A shape that proxies the bounds of a target shape without rendering.
+    """
+
+    def __init__(self, target: Shape) -> None:
+        super().__init__()
+        self.target = target
+
+    def local(self) -> Bounds:
+        """Returns the current local bounds of the target shape."""
+        return self.target.local()
+
+    def _render(self) -> str:
+        return ""
+
+
+class Spring(Shape):
+    """
+    A flexible spacer that expands to fill available space in layouts.
+    """
+
+    def __init__(self, flex: float = 1.0) -> None:
+        super().__init__()
+        self.flex = flex
+        self._size: float = 0.0
+
+    def local(self) -> Bounds:
+        # Returns a 0-width/height bound unless size is set by distribute()
+        return Bounds(0, 0, self._size, self._size)
+
+    def _render(self) -> str:
+        return ""
