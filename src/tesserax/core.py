@@ -69,6 +69,7 @@ class Point:
         """Linear interpolation between this point and another."""
         return self + (other - self) * t
 
+
 @dataclass
 class Transform:
     tx: float = 0.0
