@@ -400,77 +400,77 @@ class Polyline(Path):
         self.points.append(p)
         return self
 
-    def _build(self):
+    def _build(self) -> None:
         self._reset()
-
-        if not self.points:
+        if len(self.points) < 2:
             return
 
-        # Clamp smoothness to 0-1 range
         s = max(0.0, min(1.0, self.smoothness))
 
-        # Determine effective loop of points
-        # If closed, we wrap around; if not, we handle start/end differently
-        verts = self.points + ([self.points[0], self.points[1]] if self.closed else [])
-
-        # 1. Move to the geometric start
-        # If smoothing is on and not self.closed, we start exactly at P0
-        # If closed, we start at the midpoint of the last segment (handled by loop)
-        self.move_to(verts[0].x, verts[0].y)
-
-        # We iterate through triplets: (Prev, Curr, Next)
-        # But for an open polyline, we only round the *internal* corners.
-
-        if len(verts) < 3:
-            # Fallback for simple line
-            for p in verts[1:]:
-                self.line_to(p.x, p.y)
-
-            return
-
-        # Logic for Open Polyline
-        # P0 -> ... -> Pn
-        # We start at P0.
-        # For every corner P_i, we draw a line to "Start of Curve", then curve to "End of Curve".
-
-        # Start
-        curr_p = verts[0]
-        self.move_to(curr_p.x, curr_p.y)
-
-        for i in range(1, len(verts) - 1):
-            prev_p = verts[i - 1]
-            curr_p = verts[i]
-            next_p = verts[i + 1]
-
-            # Vectors
-            vec_in = curr_p - prev_p
-            vec_out = next_p - curr_p
-
-            len_in = vec_in.magnitude()
-            len_out = vec_out.magnitude()
-
-            # Corner Radius determination
-            # We can't exceed 50% of the shortest leg, or curves will overlap
-            max_r = min(len_in, len_out) / 2.0
-            radius = max_r * s
-
-            # Calculate geometric points
-            # "Start of Curve" is back along the incoming vector
-            p_start = curr_p - vec_in.normalize() * radius
-
-            # "End of Curve" is forward along the outgoing vector
-            p_end = curr_p + vec_out.normalize() * radius
-
-            # Draw
-            self.line_to(p_start.x, p_start.y)
-            self.quadratic_to(curr_p.x, curr_p.y, p_end.x, p_end.y)
-
-        # Finish at the last point
-        last = verts[-1]
-        self.line_to(last.x, last.y)
-
         if self.closed:
+            # CLOSED LOOP STRATEGY:
+            # 1. Start at the midpoint of the segment connecting Last -> First.
+            # 2. Iterate through ALL vertices (P0...Pn) and draw their rounded corners.
+            # 3. Close the path, which connects the last corner's exit to the start midpoint.
+
+            p_last = self.points[-1]
+            p_first = self.points[0]
+
+            # Move to the safe "middle" ground
+            start_pt = p_last.lerp(p_first, 0.5)
+            self.move_to(start_pt.x, start_pt.y)
+
+            n = len(self.points)
+            for i in range(n):
+                # Wrap indices to get neighbors
+                prev = self.points[(i - 1) % n]
+                curr = self.points[i]
+                next = self.points[(i + 1) % n]
+
+                v_in = curr - prev
+                v_out = next - curr
+
+                # Calculate radius (max is 50% of the shortest adjacent leg)
+                radius = min(v_in.magnitude(), v_out.magnitude()) / 2.0 * s
+
+                if radius < 1e-6:
+                    # Sharp corner if radius is negligible
+                    self.line_to(curr.x, curr.y)
+                else:
+                    # Round corner
+                    p_start = curr - v_in.normalize() * radius
+                    p_end = curr + v_out.normalize() * radius
+
+                    self.line_to(p_start.x, p_start.y)
+                    self.quadratic_to(curr.x, curr.y, p_end.x, p_end.y)
+
             self.close()
+
+        else:
+            # OPEN POLYLINE STRATEGY:
+            # Start at P0, round internal corners, end at Pn.
+            self.move_to(self.points[0].x, self.points[0].y)
+
+            for i in range(1, len(self.points) - 1):
+                prev_p = self.points[i - 1]
+                curr_p = self.points[i]
+                next_p = self.points[i + 1]
+
+                vec_in = curr_p - prev_p
+                vec_out = next_p - curr_p
+
+                radius = min(vec_in.magnitude(), vec_out.magnitude()) / 2.0 * s
+
+                if radius < 1e-6:
+                    self.line_to(curr_p.x, curr_p.y)
+                else:
+                    p_start = curr_p - vec_in.normalize() * radius
+                    p_end = curr_p + vec_out.normalize() * radius
+
+                    self.line_to(p_start.x, p_start.y)
+                    self.quadratic_to(curr_p.x, curr_p.y, p_end.x, p_end.y)
+
+            self.line_to(self.points[-1].x, self.points[-1].y)
 
     def _render(self) -> str:
         self._build()

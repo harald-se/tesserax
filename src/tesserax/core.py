@@ -65,6 +65,9 @@ class Point:
     def d(self, dx: float, dy: float) -> Point:
         return self + Point(dx, dy)
 
+    def lerp(self, other: Point, t: float) -> Point:
+        """Linear interpolation between this point and another."""
+        return self + (other - self) * t
 
 @dataclass
 class Transform:

@@ -237,13 +237,13 @@ with Canvas() as canvas:
     # 1. Sharp Polyline (Default)
     Polyline(points, smoothness=0).translated(0, 0)
 
-    # 2. Slightly Rounded (20% smoothing)
+    # 2. Slightly Rounded (30% smoothing)
     # Note how it preserves most of the straight line but rounds the tip.
-    Polyline(points, smoothness=0.2, stroke="blue").translated(0, 60)
+    Polyline(points, smoothness=0.3, stroke="blue").translated(0, 60)
 
     # 3. Fully Smooth (100% smoothing)
-    # This creates a flowing wave-like appearance.
-    Polyline(points, smoothness=1.0, stroke="red").translated(0, 120)
+    # This creates a flowing wave-like appearance, and closed.
+    Polyline(points, smoothness=1.0, stroke="red", closed=True).translated(0, 120)
 
 canvas.fit(10).display()
 ```
