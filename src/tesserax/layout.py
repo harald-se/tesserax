@@ -47,15 +47,12 @@ class Row(Layout):
         anchor_map: dict[Align, Anchor] = {
             "start": "top",
             "middle": "center",
-            "end": "bottom"
+            "end": "bottom",
         }
 
         # 1. Distribute along the flow axis (X)
         self.distribute(
-            axis="horizontal",
-            size=self.width,
-            mode=self.mode,
-            gap=self.gap
+            axis="horizontal", size=self.width, mode=self.mode, gap=self.gap
         )
 
         # 2. Align along the cross axis (Y)
@@ -81,16 +78,11 @@ class Column(Layout):
         anchor_map: dict[Align, Anchor] = {
             "start": "left",
             "middle": "center",
-            "end": "right"
+            "end": "right",
         }
 
         # 1. Distribute along the flow axis (Y)
-        self.distribute(
-            axis="vertical",
-            size=self.height,
-            mode=self.mode,
-            gap=self.gap
-        )
+        self.distribute(axis="vertical", size=self.height, mode=self.mode, gap=self.gap)
 
         # 2. Align along the cross axis (X)
         self.align(axis="horizontal", anchor=anchor_map[self.align_mode])

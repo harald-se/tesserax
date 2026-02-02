@@ -218,7 +218,11 @@ class Group(Shape):
 
         # 2. Calculate Spacing Logic
         is_horiz = axis == "horizontal"
-        rigid_total = sum(s.local().width if is_horiz else s.local().height for s in self.shapes if not isinstance(s, Spring))
+        rigid_total = sum(
+            s.local().width if is_horiz else s.local().height
+            for s in self.shapes
+            if not isinstance(s, Spring)
+        )
 
         effective_gap = gap
         start_offset = 0.0
