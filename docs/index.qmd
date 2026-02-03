@@ -35,24 +35,43 @@ pip install tesserax[export]
 The following example demonstrates how to create two shapes in a row and connect them with an arrow using the anchor system.
 
 ```{python}
-from tesserax import Canvas, Rect, Arrow, Circle
+import math
+from tesserax import Canvas, Square, Circle, Text, Polyline, Point, Group
 from tesserax.layout import RowLayout
 
-# Initialize a canvas
 with Canvas() as canvas:
-    # Arrange a circle and a rectangle in a row with a 50px gap
-    with RowLayout(gap=50):
-        circle = Circle(30, fill="#fee")
-        rect = Rect(100, 60, fill="#eef")
+    # We use a top-level row layout
+    with RowLayout(align="end") as logo:
+        # Left Block
+        r = Square(30, fill="green", stroke="none")
 
-    # Draw an arrow between the two shapes using anchors
-    # .dx() provides a small offset for better visual spacing
-    Arrow(
-        circle.anchor("right").dx(5),
-        rect.anchor("left").dx(-5)
+        # Center Text
+        t = Text(
+            "tesserax",
+            size=48,
+            font="sans-serif",
+            fill="navyblue",
+            anchor="middle",
+            baseline="bottom",
+        )
+
+        # Right Circle
+        c = Circle(20, fill="red", stroke="none")
+
+    # Create the "Squiggly" Underline
+    Polyline(
+        [
+            r.anchor("bottom").dy(10),
+            c.anchor("bottom").dy(10),
+        ],
+        smoothness=1.0,
+        stroke="black",
+        marker_end="arrow",
+    ).subdivide(5).apply(
+        lambda p: p.dy(math.sin((p.x / logo.bounds().width * 20 + 5)) * 5)
     )
 
-# Fit the viewport to the shapes and render
+# Use fit() to frame the logo perfectly
 canvas.fit(padding=10).display()
 ```
 

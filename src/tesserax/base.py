@@ -404,8 +404,54 @@ class Polyline(Path):
         self.points.append(p)
         return self
 
+    def subdivide(self, times: int = 1) -> Self:
+        """
+        Linearly subdivides the polyline segments 'times' iterations.
+        Inserts a midpoint between every pair of vertices.
+        """
+        for _ in range(times):
+            if len(self.points) < 2:
+                break
+
+            new_pts = []
+            count = len(self.points)
+
+            # If closed, we interpolate the segment (Last -> First) too.
+            # If open, we only go up to the second-to-last point.
+            limit = count if self.closed else count - 1
+
+            for i in range(limit):
+                curr_p = self.points[i]
+                # Modulo handles the wrap-around for the closed case
+                next_p = self.points[(i + 1) % count]
+
+                # Calculate midpoint
+                mid = (curr_p + next_p) / 2
+
+                new_pts.append(curr_p)
+                new_pts.append(mid)
+
+            # For open lines, we must manually append the final tip
+            if not self.closed:
+                new_pts.append(self.points[-1])
+
+            self.points = new_pts
+
+        self._build() # Reconstruct SVG commands
+        return self
+
+    def apply(self, func: Callable[[Point], Point]) -> Self:
+        """
+        Applies a transformation function to every point in the polyline.
+        Useful for non-affine transforms like sine waves or noise.
+        """
+        self.points = [func(p) for p in self.points]
+        self._build()
+        return self
+
     def _build(self) -> None:
         self._reset()
+
         if len(self.points) < 2:
             return
 
@@ -493,6 +539,7 @@ class Text(Shape):
         font: str = "sans-serif",
         fill: str = "black",
         anchor: Literal["start", "middle", "end"] = "middle",
+        baseline: Literal["top", "middle", "bottom"] = "middle",
     ) -> None:
         super().__init__()
         self.content = content
@@ -500,6 +547,7 @@ class Text(Shape):
         self.font = font
         self.fill = fill
         self._anchor = anchor
+        self._baseline = baseline
 
     def local(self) -> Bounds:
         # Heuristic: average character width is ~60% of font size
@@ -521,7 +569,7 @@ class Text(Shape):
         # but "central" is often more predictable for layout centers.
         return (
             f'<text x="0" y="0" font-family="{self.font}" font-size="{self.size}" '
-            f'fill="{self.fill}" text-anchor="{self._anchor}" dominant-baseline="middle">'
+            f'fill="{self.fill}" text-anchor="{self._anchor}" dominant-baseline="{self._baseline}">'
             f"{self.content}</text>"
         )
 
