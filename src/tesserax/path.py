@@ -154,8 +154,10 @@ class Grid:
             start_dx = start_node[0] - raw_start[0]
             start_dy = start_node[1] - raw_start[1]
             # Normalize to -1, 0, 1
-            if start_dx != 0: start_dx //= abs(start_dx)
-            if start_dy != 0: start_dy //= abs(start_dy)
+            if start_dx != 0:
+                start_dx //= abs(start_dx)
+            if start_dy != 0:
+                start_dy //= abs(start_dy)
 
         initial_state = (start_node[0], start_node[1], start_dx, start_dy)
 
