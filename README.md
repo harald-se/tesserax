@@ -58,6 +58,9 @@ with Canvas() as canvas:
 canvas.fit(padding=10).display()
 ```
 
+![](example.svg)
+
+
 The `display()` method in the `Canvas` class is an IPython/Jupyter/Quarto compatible  shortcut to automatically include the rendered SVG (in all its beautiful vectorial glory) directly in a notebook. But you can also use `Canvas.save()` to generate a plain old, boring SVG file on this, and `str(canvas)` to get the actual SVG code as a plain string.
 
 ## Core Components
