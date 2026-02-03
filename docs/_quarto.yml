@@ -10,6 +10,8 @@ website:
         text: Home
       - href: core.qmd
         text: User Guide
+      - href: animations.qmd
+        text: Animations
       - href: gallery.qmd
         text: Gallery
 

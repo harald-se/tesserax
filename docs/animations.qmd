@@ -1,0 +1,28 @@
+**Tesserax** comes with a powerful procedural animation system that renders animated GIF or MP4 videos. To enable it, you need to install it with the `tesserax[export]` to download the appropriate dependencies.
+
+::: {.callout-note}
+You can use the animation framework without the `export` extra to build the animations, and export a sequence of SVG files to stitch them on your own.
+:::
+
+The first step to create an animation is to construct a `Scene` object attached to your `Canvas`. With that, you can manually capture snapshots of the whole canvas, and render the final sequence proceduraly.
+
+```{python}
+import math
+from tesserax import Canvas, Rect
+from tesserax.animation import Scene
+
+# 1. Build
+with Canvas() as canvas:
+    back = Rect(100, 100, fill="white")
+    rect = Rect(50, 50, fill="orange")
+
+# 2. Animate
+scene = Scene(canvas, fps=30)
+for i in range(60):
+    rect.rotated(360 / 60)
+    canvas.align().fit()
+    scene.capture()
+
+# 3. View inline
+scene.save("example.gif")
+```

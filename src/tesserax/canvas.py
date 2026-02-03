@@ -45,9 +45,12 @@ class Canvas(Group):
         Uses IPython.display to render the SVG. If the environment does
         not support rich display, it falls back to printing the SVG string.
         """
-        from IPython.display import SVG, display as ipy_display
+        try:
+            from IPython.display import SVG, display
+        except ImportError:
+            raise ImportError("IPython is required for Canvas.display()")
 
-        ipy_display(SVG(self._build_svg()))
+        display(SVG(self._build_svg()))
 
     def fit(self, padding: float = 0, crop: bool = True) -> Canvas:
         """
