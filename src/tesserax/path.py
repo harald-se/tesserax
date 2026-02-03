@@ -47,22 +47,43 @@ class Grid:
         pad = 10
         self.bounds_idx = (int(min_gx - pad), int(min_gy - pad), int(max_gx + pad), int(max_gy + pad))
 
-    def _snap_to_free(self, gx: int, gy: int) -> tuple[int, int]:
-        """If (gx, gy) is occupied, find the nearest free cell."""
+    def _snap_to_free(self, gx: int, gy: int, target_gx: int, target_gy: int) -> tuple[int, int]:
+        """
+        Finds the nearest free cell to (gx, gy).
+        Tie-breaker: Pick the cell closest to (target_gx, target_gy).
+        """
         if (gx, gy) not in self.occupied:
             return (gx, gy)
 
-        # Spiral search for nearest free neighbor
-        # (Simple BFS could also work, but spiral is deterministic for grid)
+        # Search in expanding rings to ensure we find the strictly nearest cells first
         r = 1
-        while r < 10: # Don't search too far
+        max_r = 20 # Search radius limit
+
+        while r < max_r:
+            candidates = []
+
+            # Iterate only the perimeter of the box at radius r
+            # Top and Bottom rows
             for dx in range(-r, r + 1):
-                for dy in range(-r, r + 1):
-                    nx, ny = gx + dx, gy + dy
-                    if (nx, ny) not in self.occupied:
-                        return (nx, ny)
+                candidates.append((gx + dx, gy - r))
+                candidates.append((gx + dx, gy + r))
+
+            # Left and Right columns (excluding corners already added)
+            for dy in range(-r + 1, r):
+                candidates.append((gx - r, gy + dy))
+                candidates.append((gx + r, gy + dy))
+
+            # Filter for valid (free) candidates
+            valid_candidates = [c for c in candidates if c not in self.occupied]
+
+            if valid_candidates:
+                # HEURISTIC: Choose the candidate with minimum Euclidean distance to the target
+                # This biases the snap to move "towards" the destination.
+                return min(valid_candidates, key=lambda c: (c[0] - target_gx)**2 + (c[1] - target_gy)**2)
+
             r += 1
-        return (gx, gy) # Give up and return original (pathfinding will likely fail)
+
+        return (gx, gy) # Fail-safe
 
     def _neighbors(self, gx: int, gy: int) -> Iterator[tuple[int, int]]:
         min_x, min_y, max_x, max_y = self.bounds_idx
@@ -84,8 +105,8 @@ class Grid:
         raw_end = self._to_grid(end.x, end.y)
 
         # Fix: Ensure start/end are actually walkable
-        start_node = self._snap_to_free(*raw_start)
-        end_node = self._snap_to_free(*raw_end)
+        start_node = self._snap_to_free(*raw_start, *raw_end)
+        end_node = self._snap_to_free(*raw_end, *raw_start)
 
         open_set = []
         heapq.heappush(open_set, (0, start_node))
