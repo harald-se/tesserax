@@ -38,12 +38,12 @@ The following example demonstrates how to create two shapes in a row and connect
 
 ```python
 from tesserax import Canvas, Rect, Arrow, Circle
-from tesserax.layout import Row
+from tesserax.layout import RowLayout
 
 # Initialize a canvas
 with Canvas() as canvas:
     # Arrange a circle and a rectangle in a row with a 50px gap
-    with Row(gap=50):
+    with RowLayout(gap=50):
         circle = Circle(30, fill="#fee")
         rect = Rect(100, 60, fill="#eef")
 

@@ -78,11 +78,11 @@ Manually calculating offsets or calling procedural alignment becomes tedious in 
 
 ```{python}
 from tesserax import Canvas, Rect, Circle
-from tesserax.layout import Row
+from tesserax.layout import RowLayout
 
 with Canvas() as canvas:
     # Row is also a context manager
-    with Row(gap=10):
+    with RowLayout(gap=10):
         Rect(100, 50, fill="lightblue")
         Circle(30, fill="salmon")
         Square(40, fill="pink")
@@ -103,11 +103,11 @@ Because Layouts are themselves a type of `Group`, you can apply transformations 
 
 ```{python}
 from tesserax import Canvas, Rect, Circle, Group
-from tesserax.layout import Row
+from tesserax.layout import RowLayout
 
 with Canvas() as canvas:
     # Create and rotate a layout
-    with Row(gap=20).rotated(45):
+    with RowLayout(gap=20).rotated(45):
         Rect(100, 50, fill="lightblue")
         Circle(30, fill="salmon")
 
@@ -130,11 +130,11 @@ In this example, we will connect the `Circle` (which is inside a rotated `Row`) 
 
 ```{python}
 from tesserax import Canvas, Rect, Circle, Arrow
-from tesserax.layout import Row
+from tesserax.layout import RowLayout
 
 with Canvas() as canvas:
     # 1. Create a Row and rotate it
-    with Row(gap=40) as row:
+    with RowLayout(gap=40) as row:
         r1 = Rect(80, 40, fill="aliceblue")
         c1 = Circle(30, fill="mistyrose")
 

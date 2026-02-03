@@ -30,7 +30,7 @@ class Layout(Group):
 type Align = Literal["start", "middle", "end"]
 
 
-class Row(Layout):
+class RowLayout(Layout):
     def __init__(
         self,
         shapes: list[Shape] | None = None,
@@ -62,7 +62,7 @@ class Row(Layout):
         self.align(axis="vertical", anchor=anchor_map[self.align_mode])
 
 
-class Column(Layout):
+class ColumnLayout(Layout):
     def __init__(
         self,
         shapes: list[Shape] | None = None,
@@ -91,7 +91,7 @@ class Column(Layout):
         self.align(axis="horizontal", anchor=anchor_map[self.align_mode])
 
 
-class Grid(Layout):
+class GridLayout(Layout):
     def __init__(
         self,
         shapes: list[Shape] | None = None,

@@ -1,5 +1,5 @@
 from tesserax.base import Rect
-from tesserax.layout import Row, Column
+from tesserax.layout import RowLayoutLayout, ColumnLayout
 
 
 def test_row_layout_spacing() -> None:
@@ -8,7 +8,7 @@ def test_row_layout_spacing() -> None:
     r2 = Rect(10, 10)
 
     # Arrange two 10x10 rects with a 5px gap
-    Row([r1, r2], gap=5)
+    RowLayout([r1, r2], gap=5)
 
     # r1 should be at x=0
     # r2 should be at x = width(r1) + gap = 15
@@ -22,7 +22,7 @@ def test_column_alignment() -> None:
     r2 = Rect(10, 10)
 
     # Align to the 'end' (right side)
-    Column([r1, r2], align="end")
+    ColumnLayout([r1, r2], align="end")
 
     # r1 is max width (20), so tx=0
     # r2 is width 10, needs to move right by 10 to align 'end'
