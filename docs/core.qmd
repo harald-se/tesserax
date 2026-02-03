@@ -148,14 +148,16 @@ with Canvas() as canvas:
     # Even though c1 is inside a rotated row, c1.anchor("right")
     # returns the correct global coordinate for the arrow.
     Arrow(
-        c1.anchor("top"),
-        target.anchor("left"),
-    )
-
-    Arrow(
         r1.anchor("right"),
         c1.anchor("left"),
+        curvature=-0.25,
     )
+    Arrow(
+        c1.anchor("top"),
+        target.anchor("left"),
+        curvature=0.5,
+    )
+
 
 canvas.fit(padding=10).display()
 ```
