@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
+from typing import Self
 from .core import Shape, Bounds
 from .base import Group
 
@@ -10,14 +11,28 @@ class Canvas(Group):
 
         self.width = width
         self.height = height
-        self._defs: list[str] = [
-            """<marker id="arrowhead" markerWidth="10" markerHeight="7"
-            refX="9" refY="3.5" orient="auto">
-                <polygon points="0 0, 10 3.5, 0 7" fill="black" />
-            </marker>"""
-        ]
+        self._defs: dict[str, Shape] = {}
+
         # Default viewbox is the full canvas size
         self._viewbox: tuple[float, float, float, float] = (0, 0, width, height)
+
+        # Define the default arrowhead
+        # We need to import Path here to avoid circular definition issues
+        from .base import Path
+
+        arrow = (
+            Path(fill="black", stroke="none")
+            .jump_to(-10, -4)
+            .line_to(0, 0)
+            .line_to(-10, 4)
+            .close()
+        )
+        self.define("arrow", arrow)
+
+    def define(self, id: str, shape: Shape) -> Self:
+        """Registers a shape as a reusable SVG marker."""
+        self._defs[id] = shape
+        return self
 
     def _repr_svg_(self) -> str:
         """Enables automatic rendering in Jupyter/Quarto environments."""
@@ -57,14 +72,28 @@ class Canvas(Group):
 
     def _build_svg(self) -> str:
         content = "\n  ".join(s.render() for s in self.shapes)
-        defs_content = "\n    ".join(self._defs)
+        defs_content = []
+
+        for id, shape in self._defs.items():
+            b = shape.local()
+            # orient="auto" ensures the marker rotates with the line direction
+            # refX/refY=0 assumes the shape is designed with (0,0) as the connection point
+            defs_content.append(
+                f'<marker id="{id}" viewBox="{b.x} {b.y} {b.width} {b.height}" '
+                f'refX="0" refY="0" orient="auto" markerWidth="{b.width}" markerHeight="{b.height}">'
+                f"{shape.render()}"
+                f"</marker>"
+            )
+
+        defs_str = f"<defs>{''.join(defs_content)}</defs>" if defs_content else ""
 
         vx, vy, vw, vh = self._viewbox
+
         return (
             f'<svg width="{self.width}" height="{self.height}" '
             f'viewBox="{vx} {vy} {vw} {vh}" '
             'xmlns="http://www.w3.org/2000/svg">\n'
-            f"  <defs>\n    {defs_content}\n  </defs>\n"
+            f"  {defs_str}\n"
             f"  {content}\n"
             "</svg>"
         )

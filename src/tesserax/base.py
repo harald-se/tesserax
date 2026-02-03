@@ -1,4 +1,5 @@
 from __future__ import annotations
+import math
 from typing import Callable, Literal, Self
 from .core import Anchor, Point, Shape, Bounds
 
@@ -65,51 +66,6 @@ class Ellipse(Shape):
 
     def _render(self) -> str:
         return f'<ellipse cx="0" cy="0" rx="{self.rx}" ry="{self.ry}" stroke="{self.stroke}" fill="{self.fill}" />'
-
-
-class Line(Shape):
-    """A basic connection between two points, supports dynamic point resolution."""
-
-    def __init__(
-        self,
-        p1: Point | Callable[[], Point],
-        p2: Point | Callable[[], Point],
-        stroke: str = "black",
-        width: float = 1.0,
-    ) -> None:
-        super().__init__()
-        self.p1, self.p2 = p1, p2
-        self.stroke, self.width = stroke, width
-
-    def _resolve(self) -> tuple[Point, Point]:
-        """Resolves coordinates if they are provided as callables."""
-        p1 = self.p1() if callable(self.p1) else self.p1
-        p2 = self.p2() if callable(self.p2) else self.p2
-        return p1, p2
-
-    def local(self) -> Bounds:
-        p1, p2 = self._resolve()
-        x = min(p1.x, p2.x)
-        y = min(p1.y, p2.y)
-        return Bounds(x, y, abs(p1.x - p2.x), abs(p1.y - p2.y))
-
-    def _render(self) -> str:
-        p1, p2 = self._resolve()
-        return (
-            f'<line x1="{p1.x}" y1="{p1.y}" x2="{p2.x}" y2="{p2.y}" '
-            f'stroke="{self.stroke}" stroke-width="{self.width}" />'
-        )
-
-
-class Arrow(Line):
-    """A line with an arrowhead, resolving points dynamically during render."""
-
-    def _render(self) -> str:
-        p1, p2 = self._resolve()
-        return (
-            f'<line x1="{p1.x}" y1="{p1.y}" x2="{p2.x}" y2="{p2.y}" '
-            f'stroke="{self.stroke}" stroke-width="{self.width}" marker-end="url(#arrowhead)" />'
-        )
 
 
 class Group(Shape):
@@ -272,10 +228,20 @@ class Path(Shape):
     layout bounding box calculations.
     """
 
-    def __init__(self, stroke: str = "black", width: float = 1) -> None:
+    def __init__(
+        self,
+        fill: str = "transparent",
+        stroke: str = "black",
+        width: float = 1,
+        marker_start: str | None = None,
+        marker_end: str | None = None,
+    ) -> None:
         super().__init__()
         self.stroke = stroke
+        self.fill = fill
         self.width = width
+        self.marker_start = marker_start
+        self.marker_end = marker_end
         self._reset()
 
     def _reset(self):
@@ -299,16 +265,34 @@ class Path(Shape):
 
         return Bounds(self._min_x, self._min_y, width, height)
 
-    def move_to(self, x: float, y: float) -> Self:
+    def jump_to(self, x: float, y: float) -> Self:
         """Moves the pen to the absolute coordinates (x, y)."""
         self._commands.append(f"M {x} {y}")
         self._update_cursor(x, y)
         return self
 
-    def move_by(self, dx: float, dy: float) -> Self:
+    def arc(
+        self,
+        rx: float,
+        ry: float,
+        rot: float,
+        large: int,
+        sweep: int,
+        x: float,
+        y: float,
+    ) -> Self:
+        """
+        Public Arc command matching SVG 'A'.
+        """
+        self._commands.append(f"A {rx} {ry} {rot} {large} {sweep} {x} {y}")
+        # Note: Bounds calculation for arcs is complex; we approximate with start/end
+        self._update_cursor(x, y)
+        return self
+
+    def jump_by(self, dx: float, dy: float) -> Self:
         """Moves the pen relative to the current position."""
         x, y = self._cursor
-        return self.move_to(x + dx, y + dy)
+        return self.jump_to(x + dx, y + dy)
 
     def line_to(self, x: float, y: float) -> Self:
         """Draws a straight line to the absolute coordinates (x, y)."""
@@ -371,11 +355,15 @@ class Path(Shape):
         self._max_y = max(self._max_y, y)
 
     def _render(self) -> str:
-        """Renders the standard SVG path element."""
-        # You might want to offset commands by self.x/self.y if
-        # this shape is moved by a Layout.
-        d_attr = " ".join(self._commands)
-        return f'<path d="{d_attr}" fill="none" stroke="{self.stroke}" stroke-width="{self.width}" />'
+        d = " ".join(self._commands)
+        ms = f'marker-start="url(#{self.marker_start})"' if self.marker_start else ""
+        me = f'marker-end="url(#{self.marker_end})"' if self.marker_end else ""
+
+        return (
+            f'<path d="{d}" fill="{self.fill}" '
+            f'stroke="{self.stroke}" stroke-width="{self.width}" '
+            f"{ms} {me} />"
+        )
 
 
 class Polyline(Path):
@@ -393,10 +381,19 @@ class Polyline(Path):
         points: list[Point],
         smoothness: float = 0.0,
         closed: bool = False,
+        fill: str = "transparent",
         stroke: str = "black",
         width: float = 1.0,
+        marker_start: str | None = None,
+        marker_end: str | None = None,
     ) -> None:
-        super().__init__(stroke=stroke, width=width)
+        super().__init__(
+            fill=fill,
+            stroke=stroke,
+            width=width,
+            marker_start=marker_start,
+            marker_end=marker_end,
+        )
 
         self.points = points or []
         self.smoothness = smoothness
@@ -425,7 +422,7 @@ class Polyline(Path):
 
             # Move to the safe "middle" ground
             start_pt = p_last.lerp(p_first, 0.5)
-            self.move_to(start_pt.x, start_pt.y)
+            self.jump_to(start_pt.x, start_pt.y)
 
             n = len(self.points)
             for i in range(n):
@@ -456,7 +453,7 @@ class Polyline(Path):
         else:
             # OPEN POLYLINE STRATEGY:
             # Start at P0, round internal corners, end at Pn.
-            self.move_to(self.points[0].x, self.points[0].y)
+            self.jump_to(self.points[0].x, self.points[0].y)
 
             for i in range(1, len(self.points) - 1):
                 prev_p = self.points[i - 1]
@@ -578,3 +575,104 @@ class Spring(Shape):
 
     def _render(self) -> str:
         return ""
+
+
+class Line(Path):
+    """
+    A connection between two points with optional curvature.
+    curvature: 0 = straight
+               1 = semicircle (right/clockwise)
+              -1 = semicircle (left/counter-clockwise)
+    """
+
+    def __init__(
+        self,
+        p1: Point | Callable[[], Point],
+        p2: Point | Callable[[], Point],
+        curvature: float = 0.0,
+        stroke: str = "black",
+        width: float = 1.0,
+        marker_start: str | None = None,
+        marker_end: str | None = None,
+    ) -> None:
+        super().__init__(
+            stroke=stroke,
+            width=width,
+            fill="transparent",
+            marker_start=marker_start,
+            marker_end=marker_end,
+        )
+        self.p1 = p1
+        self.p2 = p2
+        self.curvature = curvature
+        # We build immediately to set initial bounds, but _render will rebuild
+        self._build()
+
+    def _resolve(self) -> tuple[Point, Point]:
+        p1 = self.p1() if callable(self.p1) else self.p1
+        p2 = self.p2() if callable(self.p2) else self.p2
+        return p1, p2
+
+    def _build(self) -> None:
+        self._reset()
+        start, end = self._resolve()
+
+        self.jump_to(start.x, start.y)
+
+        if abs(self.curvature) < 1e-4:
+            self.line_to(end.x, end.y)
+        else:
+            dx = end.x - start.x
+            dy = end.y - start.y
+            dist = math.sqrt(dx * dx + dy * dy)
+
+            if dist == 0:
+                return
+
+            # Math for constant curvature arc
+            # Sagitta (height of arc) = curvature * (dist / 2)
+            # This maps curvature=1 to a full semicircle
+            s = self.curvature * (dist / 2.0)
+
+            # Radius calculation
+            # R = (s^2 + (w/2)^2) / 2|s|
+            r = (s**2 + (dist / 2.0) ** 2) / (2 * abs(s))
+
+            # SVG Flags
+            large_arc = (
+                0  # Since we limit curvature to [-1, 1], we never go beyond 180 deg
+            )
+            sweep = 1 if self.curvature > 0 else 0
+
+            self.arc(r, r, 0, large_arc, sweep, end.x, end.y)
+
+    def _render(self) -> str:
+        # Re-build to support dynamic points (e.g. from Layouts)
+        self._build()
+        return super()._render()
+
+
+class Arrow(Line):
+    """
+    A Line that defaults to having an arrow marker at the end.
+    """
+
+    def __init__(
+        self,
+        p1: Point | Callable[[], Point],
+        p2: Point | Callable[[], Point],
+        curvature: float = 0.0,
+        stroke: str = "black",
+        width: float = 1.0,
+        marker_start: str | None = None,
+        marker_end: str | None = "arrow",  # Default to standard arrow
+    ) -> None:
+        super().__init__(
+            p1,
+            p2,
+            curvature,
+            stroke,
+            width,
+            marker_start=marker_start,
+            marker_end=marker_end,
+        )

@@ -6,7 +6,7 @@ from tesserax.base import Group
 
 
 class Grid:
-    def __init__(self, group: Group, size: float = 10.0, limit: int = 10000):
+    def __init__(self, group: Group, size: float = 20.0, limit: int = 10000):
         self.group = group
         self.size = size
         self.limit = limit  # Prevent infinite loops

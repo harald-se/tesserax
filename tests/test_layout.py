@@ -1,5 +1,5 @@
 from tesserax.base import Rect
-from tesserax.layout import RowLayoutLayout, ColumnLayout
+from tesserax.layout import RowLayout, ColumnLayout
 
 
 def test_row_layout_spacing() -> None:
