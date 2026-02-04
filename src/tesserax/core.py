@@ -21,6 +21,13 @@ type Anchor = Literal[
 ]
 
 
+def deg(x: float) -> float:
+    return math.degrees(x)
+
+def rad(x: float) -> float:
+    return math.radians(x)
+
+
 @dataclass(frozen=True)
 class Point:
     x: float
@@ -151,16 +158,10 @@ class Transform:
         self.rotation += radians
         return self
 
-    def rotate_degrees(self, degrees: float) -> Self:
-        self.rotation += math.radians(degrees)
-        return self
+    def scale(self, sx: float, sy: float | None = None) -> Self:
+        if sy is None:
+            sy = sx
 
-    def scale(self, factor: float) -> Self:
-        self.sx *= factor
-        self.sy *= factor
-        return self
-
-    def scale_xy(self, sx: float, sy: float) -> Self:
         self.sx *= sx
         self.sy *= sy
         return self
@@ -296,7 +297,16 @@ class Shape(ABC):
     def render(self) -> str:
         """Wraps the inner content in a transform group."""
         t = self.transform
-        ts = f' transform="translate({t.tx} {t.ty}) rotate({t.rotation}) scale({t.sx} {t.sy})"'
+
+        # Optimization: Return raw render if transform is identity
+        # (This avoids nested <g> tags for shapes that haven't moved)
+        if t.tx == 0 and t.ty == 0 and t.rotation == 0 and t.sx == 1 and t.sy == 1:
+            return self._render()
+
+        # Fix: SVG rotate expects degrees, but Transform stores radians
+        deg = math.degrees(t.rotation)
+
+        ts = f' transform="translate({t.tx} {t.ty}) rotate({deg}) scale({t.sx} {t.sy})"'
         return f"<g{ts}>\n{self._render()}\n</g>"
 
     def resolve(self, p: Point) -> Point:

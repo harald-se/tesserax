@@ -102,12 +102,12 @@ Because Layouts are themselves a type of `Group`, you can apply transformations 
 
 
 ```{python}
-from tesserax import Canvas, Rect, Circle, Group
+from tesserax import Canvas, Rect, Circle, Group, deg
 from tesserax.layout import RowLayout
 
 with Canvas() as canvas:
     # Create and rotate a layout
-    with RowLayout(gap=20).rotated(45):
+    with RowLayout(gap=20).rotated(deg(-45)):
         Rect(100, 50, fill="lightblue")
         Circle(30, fill="salmon")
 
@@ -129,7 +129,7 @@ One of the most powerful features of Tesserax is the **Anchor System**. When you
 In this example, we will connect the `Circle` (which is inside a rotated `Row`) to the `Rect` (which is outside) using an `Arrow`, and the two shapes inside the row. Notice the `curvature` parameter which controls the direction (sign) and radius of curvature, from $0$ (flat) to $1$ (full semicirle).
 
 ```{python}
-from tesserax import Canvas, Rect, Circle, Arrow
+from tesserax import Canvas, Rect, Circle, Arrow, deg
 from tesserax.layout import RowLayout
 
 with Canvas() as canvas:
@@ -138,7 +138,7 @@ with Canvas() as canvas:
         r1 = Rect(80, 40, fill="aliceblue")
         c1 = Circle(30, fill="mistyrose")
 
-    row.rotated(30).translated(50, 50)
+    row.rotated(deg(270)).translated(50, 50)
 
     # 2. Create a target rectangle outside the layout
     target = Rect(60, 60, fill="honeydew").translated(250, 0)
@@ -152,6 +152,7 @@ with Canvas() as canvas:
         c1.anchor("left"),
         curvature=-0.25,
     )
+
     Arrow(
         c1.anchor("top"),
         target.anchor("left"),
