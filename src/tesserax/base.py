@@ -15,14 +15,27 @@ class Rect(Shape):
         fill: str = "none",
     ) -> None:
         super().__init__()
-        self.w, self.h = w, h
+        self.w_val, self.h_val = w, h
         self.stroke, self.fill = stroke, fill
 
+        # Define relative to center (0,0)
+        hw, hh = w / 2, h / 2
+        self.points = [
+            Point(-hw, -hh),  # Top-Left
+            Point(hw, -hh),  # Top-Right
+            Point(hw, hh),  # Bottom-Right
+            Point(-hw, hh),  # Bottom-Left
+        ]
+
     def local(self) -> Bounds:
-        return Bounds(0, 0, self.w, self.h)
+        # Returns bounds centered at 0,0
+        hw, hh = self.w_val / 2, self.h_val / 2
+        return Bounds(-hw, -hh, self.w_val, self.h_val)
 
     def _render(self) -> str:
-        return f'<rect x="0" y="0" width="{self.w}" height="{self.h}" stroke="{self.stroke}" fill="{self.fill}" />'
+        # Render centered at 0,0
+        # x and y are top-left coordinates relative to the origin
+        return f'<rect x="{-self.w_val/2}" y="{-self.h_val/2}" width="{self.w_val}" height="{self.h_val}" stroke="{self.stroke}" fill="{self.fill}" />'
 
 
 class Square(Rect):
@@ -44,6 +57,7 @@ class Circle(Shape):
         return Bounds(-self.r, -self.r, self.r * 2, self.r * 2)
 
     def _render(self) -> str:
+        # cx, cy are center offsets relative to local transform (which is 0,0)
         return f'<circle cx="0" cy="0" r="{self.r}" stroke="{self.stroke}" fill="{self.fill}" />'
 
 
@@ -75,7 +89,6 @@ class Group(Shape):
     def current(cls) -> list[Shape] | None:
         if cls.stack:
             return cls.stack[-1]
-
         return None
 
     """A collection of shapes that behaves as a single unit."""
@@ -94,7 +107,7 @@ class Group(Shape):
                 if mode == "strict":
                     raise RuntimeError("This shape already has a parent")
                 else:
-                    continue
+                    shape.parent.remove(shape)
 
             self.shapes.append(shape)
             shape.parent = self
@@ -134,19 +147,15 @@ class Group(Shape):
     ) -> Self:
         """
         Aligns all children in the group relative to the anchor of the first child.
-
-        The alignment is performed in the group's local coordinate system by
-        adjusting the translation (tx, ty) of each shape.
         """
         if not self.shapes:
             return self
 
-        # The first shape acts as the reference datum for the alignment
         first = self.shapes[0]
+        # Map local anchor to parent space for comparison
         ref_p = first.transform.map(first.local().anchor(anchor))
 
         for shape in self.shapes[1:]:
-            # Calculate the child's anchor point in the group's coordinate system
             curr_p = shape.transform.map(shape.local().anchor(anchor))
 
             if axis in ("horizontal", "both"):
@@ -170,7 +179,6 @@ class Group(Shape):
         if not self.shapes:
             return self
 
-        # 1. Reset and Measure
         for s in self.shapes:
             if isinstance(s, Spring):
                 s._size = 0.0
@@ -179,8 +187,10 @@ class Group(Shape):
         total_flex = sum(s.flex for s in springs)
         n = len(self.shapes)
 
-        # 2. Calculate Spacing Logic
         is_horiz = axis == "horizontal"
+        # Calculate rigid total based on children's bounds in parent space?
+        # Ideally we use local size, but shapes might be scaled.
+        # For now, we use local().width/height assuming no rotation/scale on children yet.
         rigid_total = sum(
             s.local().width if is_horiz else s.local().height
             for s in self.shapes
@@ -193,7 +203,6 @@ class Group(Shape):
 
         if size is not None:
             if springs:
-                # Springs take all space not occupied by rigid shapes and fixed gaps
                 remaining = size - rigid_total - (gap * (n - 1))
                 spring_unit = max(0, remaining / total_flex) if total_flex > 0 else 0
             elif mode == "space-between" and n > 1:
@@ -202,7 +211,6 @@ class Group(Shape):
                 effective_gap = (size - rigid_total) / n
                 start_offset = effective_gap / 2
 
-        # 3. Apply Translations
         cursor = start_offset
         for s in self.shapes:
             b = s.local()
@@ -224,8 +232,6 @@ class Group(Shape):
 class Path(Shape):
     """
     A shape defined by an SVG path data string.
-    Maintains an internal cursor to support relative movements and
-    layout bounding box calculations.
     """
 
     def __init__(
@@ -247,26 +253,19 @@ class Path(Shape):
     def _reset(self):
         self._commands: list[str] = []
         self._cursor: tuple[float, float] = (0.0, 0.0)
-
         self._min_x: float = float("inf")
         self._min_y: float = float("inf")
         self._max_x: float = float("-inf")
         self._max_y: float = float("-inf")
 
     def local(self) -> Bounds:
-        """
-        Returns the bounding box of the path in its local coordinate system.
-        """
         if not self._commands:
             return Bounds(0, 0, 0, 0)
-
         width = self._max_x - self._min_x
         height = self._max_y - self._min_y
-
         return Bounds(self._min_x, self._min_y, width, height)
 
     def jump_to(self, x: float, y: float) -> Self:
-        """Moves the pen to the absolute coordinates (x, y)."""
         self._commands.append(f"M {x} {y}")
         self._update_cursor(x, y)
         return self
@@ -281,27 +280,20 @@ class Path(Shape):
         x: float,
         y: float,
     ) -> Self:
-        """
-        Public Arc command matching SVG 'A'.
-        """
         self._commands.append(f"A {rx} {ry} {rot} {large} {sweep} {x} {y}")
-        # Note: Bounds calculation for arcs is complex; we approximate with start/end
         self._update_cursor(x, y)
         return self
 
     def jump_by(self, dx: float, dy: float) -> Self:
-        """Moves the pen relative to the current position."""
         x, y = self._cursor
         return self.jump_to(x + dx, y + dy)
 
     def line_to(self, x: float, y: float) -> Self:
-        """Draws a straight line to the absolute coordinates (x, y)."""
         self._commands.append(f"L {x} {y}")
         self._update_cursor(x, y)
         return self
 
     def line_by(self, dx: float, dy: float) -> Self:
-        """Draws a line relative to the current position."""
         x, y = self._cursor
         return self.line_to(x + dx, y + dy)
 
@@ -314,41 +306,27 @@ class Path(Shape):
         end_x: float,
         end_y: float,
     ) -> Self:
-        """
-        Draws a cubic Bezier curve to (end_x, end_y) using two control points.
-        """
         self._commands.append(f"C {cp1_x} {cp1_y}, {cp2_x} {cp2_y}, {end_x} {end_y}")
-
-        # We include control points in bounds to ensure the curve is
-        # roughly contained, even though this is a loose approximation.
         self._expand_bounds(cp1_x, cp1_y)
         self._expand_bounds(cp2_x, cp2_y)
         self._update_cursor(end_x, end_y)
         return self
 
     def quadratic_to(self, cx: float, cy: float, ex: float, ey: float) -> Self:
-        """
-        Draws a quadratic Bezier curve to (ex, ey) with control point (cx, cy).
-        """
         self._commands.append(f"Q {cx} {cy}, {ex} {ey}")
-        self._expand_bounds(cx, cy)  # Approximate bounds including control point
+        self._expand_bounds(cx, cy)
         self._update_cursor(ex, ey)
         return self
 
     def close(self) -> Self:
-        """Closes the path by drawing a line back to the start."""
         self._commands.append("Z")
         return self
 
     def _update_cursor(self, x: float, y: float) -> None:
-        """Updates the internal cursor and expands the bounding box."""
         self._cursor = (x, y)
         self._expand_bounds(x, y)
 
     def _expand_bounds(self, x: float, y: float) -> None:
-        """Updates the min/max bounds of the shape."""
-        # Initialize bounds on first move if logic dictates,
-        # or rely on 0,0 default if paths always start at origin.
         self._min_x = min(self._min_x, x)
         self._min_y = min(self._min_y, y)
         self._max_x = max(self._max_x, x)
@@ -358,7 +336,6 @@ class Path(Shape):
         d = " ".join(self._commands)
         ms = f'marker-start="url(#{self.marker_start})"' if self.marker_start else ""
         me = f'marker-end="url(#{self.marker_end})"' if self.marker_end else ""
-
         return (
             f'<path d="{d}" fill="{self.fill}" '
             f'stroke="{self.stroke}" stroke-width="{self.width}" '
@@ -368,12 +345,8 @@ class Path(Shape):
 
 class Polyline(Path):
     """
-    A sequence of connected lines with optional corner rounding.
-
-    Args:
-        points: List of vertices.
-        smoothness: 0.0 (sharp) to 1.0 (fully rounded/spline-like).
-        closed: If True, connects the last point back to the first.
+    A sequence of connected lines.
+    Supports .center() to re-align points around the origin.
     """
 
     def __init__(
@@ -394,7 +367,6 @@ class Polyline(Path):
             marker_start=marker_start,
             marker_end=marker_end,
         )
-
         self.points = points or []
         self.smoothness = smoothness
         self.closed = closed
@@ -404,122 +376,109 @@ class Polyline(Path):
         self.points.append(p)
         return self
 
+    def center(self) -> Self:
+        """
+        Shifts all points so their bounding box center is at (0,0).
+        Then updates the transform translation to compensate,
+        keeping the shape visually in the same place.
+        """
+        if not self.points:
+            return self
+
+        # 1. Measure current bounds
+        min_x = min(p.x for p in self.points)
+        max_x = max(p.x for p in self.points)
+        min_y = min(p.y for p in self.points)
+        max_y = max(p.y for p in self.points)
+
+        cx = (min_x + max_x) / 2
+        cy = (min_y + max_y) / 2
+
+        # 2. Shift points to center
+        new_points = []
+        for p in self.points:
+            new_points.append(Point(p.x - cx, p.y - cy))
+        self.points = new_points
+
+        # 3. Compensate transform
+        self.transform.tx += cx
+        self.transform.ty += cy
+
+        # 4. Rebuild path
+        self._build()
+        return self
+
     def subdivide(self, times: int = 1) -> Self:
-        """
-        Linearly subdivides the polyline segments 'times' iterations.
-        Inserts a midpoint between every pair of vertices.
-        """
         for _ in range(times):
             if len(self.points) < 2:
                 break
-
             new_pts = []
             count = len(self.points)
-
-            # If closed, we interpolate the segment (Last -> First) too.
-            # If open, we only go up to the second-to-last point.
             limit = count if self.closed else count - 1
-
             for i in range(limit):
                 curr_p = self.points[i]
-                # Modulo handles the wrap-around for the closed case
                 next_p = self.points[(i + 1) % count]
-
-                # Calculate midpoint
                 mid = (curr_p + next_p) / 2
-
                 new_pts.append(curr_p)
                 new_pts.append(mid)
-
-            # For open lines, we must manually append the final tip
             if not self.closed:
                 new_pts.append(self.points[-1])
-
             self.points = new_pts
-
-        self._build()  # Reconstruct SVG commands
+        self._build()
         return self
 
     def apply(self, func: Callable[[Point], Point]) -> Self:
-        """
-        Applies a transformation function to every point in the polyline.
-        Useful for non-affine transforms like sine waves or noise.
-        """
         self.points = [func(p) for p in self.points]
         self._build()
         return self
 
     def _build(self) -> None:
         self._reset()
-
         if len(self.points) < 2:
             return
 
         s = max(0.0, min(1.0, self.smoothness))
 
         if self.closed:
-            # CLOSED LOOP STRATEGY:
-            # 1. Start at the midpoint of the segment connecting Last -> First.
-            # 2. Iterate through ALL vertices (P0...Pn) and draw their rounded corners.
-            # 3. Close the path, which connects the last corner's exit to the start midpoint.
-
             p_last = self.points[-1]
             p_first = self.points[0]
-
-            # Move to the safe "middle" ground
             start_pt = p_last.lerp(p_first, 0.5)
             self.jump_to(start_pt.x, start_pt.y)
 
             n = len(self.points)
             for i in range(n):
-                # Wrap indices to get neighbors
                 prev = self.points[(i - 1) % n]
                 curr = self.points[i]
                 next = self.points[(i + 1) % n]
-
                 v_in = curr - prev
                 v_out = next - curr
-
-                # Calculate radius (max is 50% of the shortest adjacent leg)
                 radius = min(v_in.magnitude(), v_out.magnitude()) / 2.0 * s
 
                 if radius < 1e-6:
-                    # Sharp corner if radius is negligible
                     self.line_to(curr.x, curr.y)
                 else:
-                    # Round corner
                     p_start = curr - v_in.normalize() * radius
                     p_end = curr + v_out.normalize() * radius
-
                     self.line_to(p_start.x, p_start.y)
                     self.quadratic_to(curr.x, curr.y, p_end.x, p_end.y)
-
             self.close()
 
         else:
-            # OPEN POLYLINE STRATEGY:
-            # Start at P0, round internal corners, end at Pn.
             self.jump_to(self.points[0].x, self.points[0].y)
-
             for i in range(1, len(self.points) - 1):
                 prev_p = self.points[i - 1]
                 curr_p = self.points[i]
                 next_p = self.points[i + 1]
-
                 vec_in = curr_p - prev_p
                 vec_out = next_p - curr_p
-
                 radius = min(vec_in.magnitude(), vec_out.magnitude()) / 2.0 * s
-
                 if radius < 1e-6:
                     self.line_to(curr_p.x, curr_p.y)
                 else:
                     p_start = curr_p - vec_in.normalize() * radius
                     p_end = curr_p + vec_out.normalize() * radius
-
                     self.line_to(p_start.x, p_start.y)
                     self.quadratic_to(curr_p.x, curr_p.y, p_end.x, p_end.y)
-
             self.line_to(self.points[-1].x, self.points[-1].y)
 
     def _render(self) -> str:
@@ -529,7 +488,7 @@ class Polyline(Path):
 
 class Text(Shape):
     """
-    A text primitive with heuristic-based bounding box calculation.
+    Text primitive. Default anchor is 'middle' for true centering.
     """
 
     def __init__(
@@ -554,19 +513,18 @@ class Text(Shape):
         width = len(self.content) * self.size * 0.6
         height = self.size
 
-        match self._anchor:
-            case "start":
-                return Bounds(0, -height + 2, width, height)
-            case "middle":
-                return Bounds(-width / 2, -height + 2, width, height)
-            case "end":
-                return Bounds(-width, -height + 2, width, height)
-            case _:
-                raise ValueError(f"Invalid anchor: {self._anchor}")
+        # Bounds logic for "middle" anchor (which is the default now)
+        # origin (0,0) is at the center of the text.
+        if self._anchor == "middle":
+            return Bounds(-width / 2, -height / 2, width, height)
+        elif self._anchor == "start":
+            return Bounds(0, -height / 2, width, height)
+        elif self._anchor == "end":
+            return Bounds(-width, -height / 2, width, height)
+        return Bounds(0, 0, width, height)
 
     def _render(self) -> str:
-        # dominant-baseline="middle" or "alphabetic" helps vertical alignment
-        # but "central" is often more predictable for layout centers.
+        # Note: 'dominant-baseline="middle"' centers text vertically around y=0
         return (
             f'<text x="0" y="0" font-family="{self.font}" font-size="{self.size}" '
             f'fill="{self.fill}" text-anchor="{self._anchor}" dominant-baseline="{self._baseline}">'
@@ -575,15 +533,15 @@ class Text(Shape):
 
 
 class Spacer(Shape):
-    """
-    An invisible rectangular shape used to reserve fixed space in layouts.
-    """
-
     def __init__(self, w: float, h: float) -> None:
         super().__init__()
         self.w, self.h = w, h
 
     def local(self) -> Bounds:
+        # Spacer can remain top-left based or centered.
+        # Standard layouts often assume top-left flows, but let's stick to 0,0 center for consistency?
+        # Actually spacers are usually structural and invisible, so 0,0 to w,h is fine
+        # provided layouts handle them.
         return Bounds(0, 0, self.w, self.h)
 
     def _render(self) -> str:
@@ -591,16 +549,11 @@ class Spacer(Shape):
 
 
 class Ghost(Shape):
-    """
-    A shape that proxies the bounds of a target shape without rendering.
-    """
-
     def __init__(self, target: Shape) -> None:
         super().__init__()
         self.target = target
 
     def local(self) -> Bounds:
-        """Returns the current local bounds of the target shape."""
         return self.target.local()
 
     def _render(self) -> str:
@@ -608,17 +561,12 @@ class Ghost(Shape):
 
 
 class Spring(Shape):
-    """
-    A flexible spacer that expands to fill available space in layouts.
-    """
-
     def __init__(self, flex: float = 1.0) -> None:
         super().__init__()
         self.flex = flex
         self._size: float = 0.0
 
     def local(self) -> Bounds:
-        # Returns a 0-width/height bound unless size is set by distribute()
         return Bounds(0, 0, self._size, self._size)
 
     def _render(self) -> str:
@@ -626,13 +574,6 @@ class Spring(Shape):
 
 
 class Line(Path):
-    """
-    A connection between two points with optional curvature.
-    curvature: 0 = straight
-               1 = semicircle (right/clockwise)
-              -1 = semicircle (left/counter-clockwise)
-    """
-
     def __init__(
         self,
         p1: Point | Callable[[], Point],
@@ -653,7 +594,6 @@ class Line(Path):
         self.p1 = p1
         self.p2 = p2
         self.curvature = curvature
-        # We build immediately to set initial bounds, but _render will rebuild
         self._build()
 
     def _resolve(self) -> tuple[Point, Point]:
@@ -673,38 +613,21 @@ class Line(Path):
             dx = end.x - start.x
             dy = end.y - start.y
             dist = math.sqrt(dx * dx + dy * dy)
-
             if dist == 0:
                 return
 
-            # Math for constant curvature arc
-            # Sagitta (height of arc) = curvature * (dist / 2)
-            # This maps curvature=1 to a full semicircle
             s = self.curvature * (dist / 2.0)
-
-            # Radius calculation
-            # R = (s^2 + (w/2)^2) / 2|s|
             r = (s**2 + (dist / 2.0) ** 2) / (2 * abs(s))
-
-            # SVG Flags
-            large_arc = (
-                0  # Since we limit curvature to [-1, 1], we never go beyond 180 deg
-            )
+            large_arc = 0
             sweep = 1 if self.curvature > 0 else 0
-
             self.arc(r, r, 0, large_arc, sweep, end.x, end.y)
 
     def _render(self) -> str:
-        # Re-build to support dynamic points (e.g. from Layouts)
         self._build()
         return super()._render()
 
 
 class Arrow(Line):
-    """
-    A Line that defaults to having an arrow marker at the end.
-    """
-
     def __init__(
         self,
         p1: Point | Callable[[], Point],
@@ -713,7 +636,7 @@ class Arrow(Line):
         stroke: str = "black",
         width: float = 1.0,
         marker_start: str | None = None,
-        marker_end: str | None = "arrow",  # Default to standard arrow
+        marker_end: str | None = "arrow",
     ) -> None:
         super().__init__(
             p1,

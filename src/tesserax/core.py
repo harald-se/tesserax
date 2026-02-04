@@ -72,19 +72,98 @@ class Point:
 
 @dataclass
 class Transform:
+    """
+    Represents an affine transformation decomposed into:
+    Translation (tx, ty), Rotation (radians), and Scale (sx, sy).
+    """
+
     tx: float = 0.0
     ty: float = 0.0
     rotation: float = 0.0
-    scale: float = 1.0
+    sx: float = 1.0
+    sy: float = 1.0
 
-    def map(self, p: Point) -> Point:
-        return p.apply(self.tx, self.ty, self.rotation, self.scale)
+    # --- Factory & Lifecycle ---
 
-    def reset(self) -> None:
+    @classmethod
+    def identity(cls) -> Self:
+        return cls()
+
+    def copy(self) -> Transform:
+        return Transform(self.tx, self.ty, self.rotation, self.sx, self.sy)
+
+    def reset(self) -> Self:
         self.tx = 0.0
         self.ty = 0.0
         self.rotation = 0.0
-        self.scale = 1.0
+        self.sx = 1.0
+        self.sy = 1.0
+        return self
+
+    # --- Animation Logic ---
+
+    def lerp(self, target: "Transform", t: float) -> "Transform":
+        """
+        Linearly interpolates between this transform and a target.
+        Returns a NEW Transform instance.
+        """
+        # Clamp t to [0, 1] to prevent overshooting
+        t = max(0.0, min(1.0, t))
+
+        return Transform(
+            tx=self.tx + (target.tx - self.tx) * t,
+            ty=self.ty + (target.ty - self.ty) * t,
+            # Interpolating angle directly preserves rotational direction
+            rotation=self.rotation + (target.rotation - self.rotation) * t,
+            sx=self.sx + (target.sx - self.sx) * t,
+            sy=self.sy + (target.sy - self.sy) * t,
+        )
+
+    # --- Math & Application ---
+
+    def map(self, p: "Point") -> "Point":
+        """
+        Applies the transformation to a Point (Scale -> Rotate -> Translate).
+        """
+        # 1. Scale
+        x = p.x * self.sx
+        y = p.y * self.sy
+
+        # 2. Rotate
+        if self.rotation != 0:
+            cos_theta = math.cos(self.rotation)
+            sin_theta = math.sin(self.rotation)
+            x_new = x * cos_theta - y * sin_theta
+            y_new = x * sin_theta + y * cos_theta
+            x, y = x_new, y_new
+
+        # 3. Translate
+        return p.__class__(x + self.tx, y + self.ty)
+
+    # --- Fluent Mutators ---
+
+    def translate(self, dx: float, dy: float) -> Self:
+        self.tx += dx
+        self.ty += dy
+        return self
+
+    def rotate(self, radians: float) -> Self:
+        self.rotation += radians
+        return self
+
+    def rotate_degrees(self, degrees: float) -> Self:
+        self.rotation += math.radians(degrees)
+        return self
+
+    def scale(self, factor: float) -> Self:
+        self.sx *= factor
+        self.sy *= factor
+        return self
+
+    def scale_xy(self, sx: float, sy: float) -> Self:
+        self.sx *= sx
+        self.sy *= sy
+        return self
 
 
 @dataclass(frozen=True)
@@ -177,12 +256,24 @@ class Bounds:
 class Shape(ABC):
     def __init__(self) -> None:
         from .base import Group
+        from .animation import Animator
 
-        self.transform = Transform()
+        self.transform = Transform.identity()
         self.parent: Group | None = None
 
         if (gp := Group.current()) is not None:
             gp.append(self)
+
+        self._animator: Animator | None = None
+
+    @property
+    def animate(self):
+        from .animation import Animator
+
+        if self._animator is None:
+            self._animator = Animator(self)
+
+        return self._animator
 
     @abstractmethod
     def local(self) -> Bounds:
@@ -205,7 +296,7 @@ class Shape(ABC):
     def render(self) -> str:
         """Wraps the inner content in a transform group."""
         t = self.transform
-        ts = f' transform="translate({t.tx} {t.ty}) rotate({t.rotation}) scale({t.scale})"'
+        ts = f' transform="translate({t.tx} {t.ty}) rotate({t.rotation}) scale({t.sx} {t.sy})"'
         return f"<g{ts}>\n{self._render()}\n</g>"
 
     def resolve(self, p: Point) -> Point:
@@ -218,16 +309,15 @@ class Shape(ABC):
         return self.resolve(self.local().anchor(name))
 
     def translated(self, dx: float, dy: float) -> Self:
-        self.transform.tx += dx
-        self.transform.ty += dy
+        self.transform.translate(dx, dy)
         return self
 
     def rotated(self, r: float) -> Self:
-        self.transform.rotation += r
+        self.transform.rotate(r)
         return self
 
     def scaled(self, s: float) -> Self:
-        self.transform.scale += s
+        self.transform.scale(s)
         return self
 
     def clone(self) -> Self:

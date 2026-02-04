@@ -1,98 +1,524 @@
+from __future__ import annotations
+from typing import Callable, Self, TYPE_CHECKING
+import bisect
+import math
+import random
+import string
+
+# Prevent circular imports for type hints
+if TYPE_CHECKING:
+    from .core import Shape, Transform, Point
+    from .canvas import Canvas
+
+
+# --- Easing Functions ---
+def linear(t: float) -> float:
+    return t
+
+
+def smooth(t: float) -> float:
+    return t * t * (3 - 2 * t)
+
+
+def ease_out(t: float) -> float:
+    return t * (2 - t)
+
+
+def ease_in_out_cubic(t: float) -> float:
+    return 3 * t * t - 2 * t * t * t if t < 0.5 else 1 - (-2 * t + 2) ** 3 / 2
+
+
+# --- Color Utilities (Inline for portability) ---
+def _hex_to_rgb(hex_color: str) -> tuple[float, float, float]:
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) == 3:
+        hex_color = "".join([c * 2 for c in hex_color])
+    return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+
+
+def _rgb_to_hex(rgb: tuple[float, float, float]) -> str:
+    return "#{:02x}{:02x}{:02x}".format(int(rgb[0]), int(rgb[1]), int(rgb[2]))
+
+
+def _interpolate_color(c1: str, c2: str, t: float) -> str:
+    if not c1 or not c2 or c1 == "none" or c2 == "none":
+        return c2 if t > 0.5 else c1
+    if not c1.startswith("#") or not c2.startswith("#"):
+        return c2 if t > 0.5 else c1
+    r1, g1, b1 = _hex_to_rgb(c1)
+    r2, g2, b2 = _hex_to_rgb(c2)
+    return _rgb_to_hex((r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t))
+
+
+# --- Core Animation Class ---
+
+
+class Animation:
+    """
+    Base class for logic that modifies a shape over a normalized time t [0, 1].
+    """
+
+    def __init__(
+        self, shape: Shape | None, rate_func: Callable[[float], float] = linear
+    ):
+        self.shape = shape
+        self.rate_func = rate_func
+        self.relative_weight = 1.0
+        self._started = False
+
+    def begin(self) -> None:
+        """Capture initial state. Only run once per playback."""
+        if not self._started:
+            self._start()
+            self._started = True
+
+    def _start(self) -> None:
+        """Subclasses implement specific state capture here."""
+        pass
+
+    def update(self, t: float) -> None:
+        """Apply changes based on normalized progress t."""
+        pass
+
+    def finish(self) -> None:
+        """Force final state."""
+        if not self._started:
+            self.begin()
+        self.update(1.0)
+
+    # --- Fluent API Modifiers ---
+
+    def weight(self, w: float) -> Self:
+        self.relative_weight = w
+        return self
+
+    def rated(self, func: Callable[[float], float]) -> Self:
+        self.rate_func = func
+        return self
+
+    def smoothed(self) -> Self:
+        return self.rated(smooth)
+
+    def delayed(self, delay_ratio: float) -> "WrapperAnimation":
+        return WrapperAnimation(
+            self,
+            lambda t: 0 if t < delay_ratio else (t - delay_ratio) / (1 - delay_ratio),
+        )
+
+    def looping(self, times: float = 1.0) -> "WrapperAnimation":
+        wrapper = WrapperAnimation(self, lambda t: (t * times) % 1.0)
+        wrapper._is_loop = True
+        return wrapper
+
+    def reversed(self) -> "WrapperAnimation":
+        return WrapperAnimation(self, lambda t: 1.0 - t)
+
+    # --- Operator Overloads ---
+
+    def __mul__(self, factor: float) -> "WrapperAnimation":
+        return self.looping(factor)
+
+    def __add__(self, other: "Animation") -> "SequentialAnimation":
+        children = self.children if isinstance(self, SequentialAnimation) else [self]
+        children.append(other)
+        return SequentialAnimation(children)
+
+
+# --- Structural Animations ---
+
+
+class WrapperAnimation(Animation):
+    def __init__(self, child: Animation, t_modifier: Callable[[float], float]):
+        super().__init__(child.shape)
+        self.child = child
+        self.t_modifier = t_modifier
+        self._is_loop = False
+        # Inherit weight from child roughly, though it might be overridden
+        self.relative_weight = child.relative_weight
+
+    def begin(self):
+        self.child.begin()
+
+    def update(self, t: float):
+        mod_t = self.t_modifier(t)
+        if not self._is_loop:
+            mod_t = max(0.0, min(1.0, mod_t))
+        self.child.update(mod_t)
+
+
+class SequentialAnimation(Animation):
+    def __init__(self, children: list[Animation]):
+        super().__init__(children[0].shape if children else None)
+        self.children = children
+
+        total_weight = sum(c.relative_weight for c in children)
+        self.checkpoints = []
+        current = 0.0
+        for c in children:
+            width = c.relative_weight / (total_weight or 1)
+            current += width
+            self.checkpoints.append(current)
+
+    def begin(self):
+        self._started = True
+        # Lazy start: Do not start children yet
+
+    def update(self, t: float):
+        t = self.rate_func(t)
+        n = len(self.children)
+        if n == 0:
+            return
+
+        idx = bisect.bisect_left(self.checkpoints, t)
+        if idx >= n:
+            idx = n - 1
+
+        start_t = self.checkpoints[idx - 1] if idx > 0 else 0.0
+        end_t = self.checkpoints[idx]
+        duration = end_t - start_t
+
+        local_t = (t - start_t) / duration if duration > 1e-9 else 1.0
+
+        # Catch up previous
+        for i in range(idx):
+            child = self.children[i]
+            if not child._started:
+                child.begin()
+            child.update(1.0)
+
+        # Update active
+        active = self.children[idx]
+        if not active._started:
+            active.begin()
+        active.update(local_t)
+
+
+class LaggedStart(Animation):
+    """
+    Plays a group of animations with a time lag.
+    lag_ratio: 0.0 (parallel) -> 1.0 (sequential)
+    """
+
+    def __init__(self, *animations: Animation, lag_ratio: float = 0.1, **kwargs):
+        super().__init__(animations[0].shape if animations else None, **kwargs)
+        self.anims = animations
+        self.lag = lag_ratio
+
+    def begin(self):
+        self._started = True
+
+    def update(self, t: float):
+        t = self.rate_func(t)
+        n = len(self.anims)
+        if n == 0:
+            return
+
+        # Total span in relative time units = 1.0 + total lag
+        total_span = 1.0 + (n - 1) * self.lag
+
+        for i, anim in enumerate(self.anims):
+            # Calculate start/end time for this specific animation in global t
+            start = (i * self.lag) / total_span
+            end = (1.0 + i * self.lag) / total_span
+
+            if t < start:
+                local_t = 0.0
+            elif t > end:
+                local_t = 1.0
+            else:
+                local_t = (t - start) / (end - start)
+
+            if local_t > 0 and not anim._started:
+                anim.begin()
+
+            anim.update(local_t)
+
+
+class Wait(Animation):
+    def __init__(self, weight: float = 1.0):
+        super().__init__(None)
+        self.weight(weight)
+
+
+# --- Property Animations ---
+
+
+class TransformAnimation(Animation):
+    def __init__(self, shape: Shape, target: Transform, **kwargs):
+        super().__init__(shape, **kwargs)
+        self.target = target
+        self.start_transform = None
+
+    def _start(self):
+        self.start_transform = self.shape.transform.copy()
+
+    def update(self, t: float):
+        alpha = self.rate_func(t)
+        new_trans = self.start_transform.lerp(self.target, alpha)
+        self.shape.transform = new_trans
+
+
+class StyleAnimation(Animation):
+    def __init__(self, shape: Shape, fill=None, stroke=None, width=None, **kwargs):
+        super().__init__(shape, **kwargs)
+        self.target_fill = fill
+        self.target_stroke = stroke
+        self.target_width = width
+        self.start_fill = None
+        self.start_stroke = None
+        self.start_width = None
+
+    def _start(self):
+        self.start_fill = getattr(self.shape, "fill", "none")
+        self.start_stroke = getattr(self.shape, "stroke", "none")
+        self.start_width = getattr(self.shape, "width", 1.0)
+
+    def update(self, t: float):
+        alpha = self.rate_func(t)
+        if self.target_width is not None:
+            self.shape.width = (
+                self.start_width + (self.target_width - self.start_width) * alpha
+            )
+        if self.target_fill is not None:
+            self.shape.fill = _interpolate_color(
+                self.start_fill, self.target_fill, alpha
+            )
+        if self.target_stroke is not None:
+            self.shape.stroke = _interpolate_color(
+                self.start_stroke, self.target_stroke, alpha
+            )
+
+
+# --- Specialized Animations ---
+
+
+class Write(Animation):
+    def __init__(self, shape: Shape, **kwargs):
+        super().__init__(shape, **kwargs)
+        self.full_text = getattr(shape, "text", "")
+
+    def _start(self):
+        self.full_text = getattr(self.shape, "text", "")
+
+    def update(self, t: float):
+        alpha = self.rate_func(t)
+        count = int(alpha * len(self.full_text))
+        self.shape.text = self.full_text[:count]
+
+
+class Scramble(Animation):
+    def __init__(self, shape: Shape, seed: int = 42, **kwargs):
+        super().__init__(shape, **kwargs)
+        self.full_text = getattr(shape, "text", "")
+        self.rng = random.Random(seed)
+
+    def update(self, t: float):
+        alpha = self.rate_func(t)
+        total = len(self.full_text)
+        resolved = int(alpha * total)
+
+        result = list(self.full_text[:resolved])
+        remaining = total - resolved
+        chars = string.ascii_letters + string.digits + "!@#$%"
+        scramble = [self.rng.choice(chars) for _ in range(remaining)]
+        self.shape.text = "".join(result + scramble)
+
+
+class VertexMorph(Animation):
+    def __init__(self, shape: Shape, target_points: list, **kwargs):
+        super().__init__(shape, **kwargs)
+        self.target_points = target_points
+        self.start_points = []
+        # Lazy import for Point to avoid circular dependency issues at module level
+        from .core import Point
+
+        self._Point = Point
+
+    def _start(self):
+        if not hasattr(self.shape, "points"):
+            # Fail gracefully or raise
+            self.start_points = []
+            return
+
+        current = getattr(self.shape, "points")
+        self.start_points = [self._Point(p.x, p.y) for p in current]
+
+        # Simple safety check on length
+        if len(self.start_points) != len(self.target_points):
+            print(
+                f"Warning: Morph mismatch {len(self.start_points)} vs {len(self.target_points)}"
+            )
+
+    def update(self, t: float):
+        if not self.start_points:
+            return
+        alpha = self.rate_func(t)
+
+        new_pts = []
+        for s, e in zip(self.start_points, self.target_points):
+            nx = s.x + (e.x - s.x) * alpha
+            ny = s.y + (e.y - s.y) * alpha
+            new_pts.append(self._Point(nx, ny))
+
+        self.shape.points = new_pts
+        if hasattr(self.shape, "_build"):
+            self.shape._build()
+
+
+class FollowPath(Animation):
+    def __init__(self, shape: Shape, path: Shape, rotate_along: bool = False, **kwargs):
+        super().__init__(shape, **kwargs)
+        self.path = path
+        self.rotate_along = rotate_along
+
+    def update(self, t: float):
+        alpha = self.rate_func(t)
+
+        # Requires path to have point_at(t) -> Point
+        if not hasattr(self.path, "point_at"):
+            return
+
+        target_point = self.path.point_at(alpha)
+
+        # Set position directly (Global coordinates)
+        self.shape.transform.tx = target_point.x
+        self.shape.transform.ty = target_point.y
+
+        if self.rotate_along:
+            epsilon = 0.01
+            # Look ahead for tangent
+            next_t = min(1.0, alpha + epsilon)
+            # If we are at the end, look backward
+            if next_t == alpha:
+                next_t = alpha
+                alpha = max(0.0, alpha - epsilon)
+                target_point = self.path.point_at(alpha)
+
+            next_p = self.path.point_at(next_t)
+            angle = math.atan2(next_p.y - target_point.y, next_p.x - target_point.x)
+            self.shape.transform.rotation = angle
+
+
+# --- Factory Class ---
+
+
+class Animator:
+    """Helper attached to shape.animate"""
+
+    def __init__(self, shape: Shape):
+        self.shape = shape
+
+    # Transform
+    def translate(self, x: float, y: float) -> TransformAnimation:
+        target = self.shape.transform.copy()
+        target.tx = x
+        target.ty = y
+        return TransformAnimation(self.shape, target)
+
+    def rotate(self, angle: float) -> TransformAnimation:
+        target = self.shape.transform.copy()
+        target.rotation += angle
+        return TransformAnimation(self.shape, target)
+
+    def scale(self, factor: float) -> TransformAnimation:
+        target = self.shape.transform.copy()
+        target.sx *= factor
+        target.sy *= factor
+        return TransformAnimation(self.shape, target)
+
+    # Style
+    def fill(self, color: str) -> StyleAnimation:
+        return StyleAnimation(self.shape, fill=color)
+
+    def stroke(self, color: str) -> StyleAnimation:
+        return StyleAnimation(self.shape, stroke=color)
+
+    def style(self, **kwargs) -> StyleAnimation:
+        return StyleAnimation(self.shape, **kwargs)
+
+    # Text
+    def write(self) -> Write:
+        return Write(self.shape)
+
+    def scramble(self) -> Scramble:
+        return Scramble(self.shape)
+
+    # Geometry
+    def morph(self, target) -> VertexMorph:
+        pts = target.points if hasattr(target, "points") else target
+        return VertexMorph(self.shape, pts)
+
+    def follow(self, path: Shape, rotate: bool = False) -> FollowPath:
+        return FollowPath(self.shape, path, rotate_along=rotate)
+
+
+# --- Scene Class (Minimal for execution) ---
 import io
-from pathlib import Path
-from typing import BinaryIO, Literal
+import base64
+from typing import BinaryIO
 import imageio
 import cairosvg
-from .canvas import Canvas
 
 
 class Scene:
-    def __init__(
-        self, canvas: Canvas, fps: int = 30, dpi: int = 96, background: str = "white"
-    ) -> None:
+    def __init__(self, canvas: Canvas, fps: int = 30, background: str = "white"):
         self.canvas = canvas
         self.fps = fps
-        self.dpi = dpi
         self.background = background
         self._frames: list[bytes] = []
 
-    def capture(self) -> None:
-        """
-        Snapshots the current state of the canvas into a PNG buffer.
-        """
-        # 1. Generate SVG String
-        svg_string = self.canvas._build_svg()
+    def capture(self):
+        svg = self.canvas._build_svg()
+        png = cairosvg.svg2png(
+            bytestring=svg.encode("utf-8"), background_color=self.background
+        )
+        self._frames.append(png)
 
-        # 2. Rasterize to PNG bytes (In-Memory)
-        # We assume standard sRGB output
-        png_data: bytes = cairosvg.svg2png(
-            bytestring=svg_string.encode("utf-8"),
-            dpi=self.dpi,
-            background_color=self.background,
-        ) # type: ignore
-
-        self._frames.append(png_data)
-
-    def save(
-        self,
-        destination: str | Path | BinaryIO,
-        format: Literal["gif", "mp4", None] = None,
-    ) -> None:
-        """
-        Compiles captured frames and saves to the destination.
-
-        Args:
-            destination: File path (str/Path) or a file-like object.
-            format: 'gif', 'mp4', etc. Optional if destination is a path with extension.
-        """
-        if not self._frames:
-            print("No frames captured!")
+    def play(self, *animations: Animation, duration: float = 1.0):
+        if not animations:
             return
+        total = int(duration * self.fps)
 
-        # 1. Prepare Images
-        images = []
-        for png_bytes in self._frames:
-            images.append(imageio.imread(io.BytesIO(png_bytes)))
+        # Initialize
+        for anim in animations:
+            anim.begin()
 
-        # 2. Determine Format
-        if format is None:
-            if isinstance(destination, (str, Path)):
-                # Infer from extension (e.g. "video.mp4" -> "mp4")
-                format = Path(destination).suffix.strip(".")
-            else:
-                format = "gif"  # Default fallback for file objects
+        # Loop
+        for i in range(total):
+            t = i / total
+            for anim in animations:
+                anim.update(t)
+            self.capture()
 
-        # 3. Generate to In-Memory Buffer
-        buffer = io.BytesIO()
+        # Finalize
+        for anim in animations:
+            anim.finish()
 
-        # ImageIO args based on format
+    def save(self, dest, format=None):
+        if not self._frames:
+            return
+        images = [imageio.imread(io.BytesIO(f)) for f in self._frames]
+
         kwargs = {"fps": self.fps}
-        if format == "gif":
-            kwargs["loop"] = 0  # Infinite loop
-        elif format == "mp4":
-            kwargs["quality"] = 8  # High quality
-
-        # Write to the buffer
-        imageio.mimsave(buffer, images, format=format, **kwargs)
-        buffer.seek(0)
-
-        # 4. Write to Destination
-        if isinstance(destination, (str, Path)):
-            with open(destination, "wb") as f:
-                f.write(buffer.getbuffer())
+        if format == "mp4":
+            kwargs["quality"] = 8
         else:
-            destination.write(buffer.getbuffer())
+            kwargs["loop"] = 0
+
+        imageio.mimsave(dest, images, format=format or "gif", **kwargs)
 
     def display(self):
-        """
-        Renders the animation as a GIF and returns an IPython Image object
-        for inline display in Jupyter/Colab notebooks.
-        """
         try:
-            from IPython.display import Image, display
+            from IPython.display import display, HTML
         except ImportError:
-            raise ImportError("IPython is required for Scene.display()")
+            return
 
-        buffer = io.BytesIO()
-        self.save(buffer, format="gif")
-        display(Image(data=buffer.getvalue(), format="gif"))
+        buf = io.BytesIO()
+        self.save(buf, format="gif")
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        display(
+            HTML(f'<img src="data:image/gif;base64,{b64}" style="max-width:100%"/>')
+        )
+
+    def _ipython_display_(self):
+        self.display()

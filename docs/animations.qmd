@@ -24,5 +24,33 @@ for i in range(60):
     scene.capture()
 
 # 3. View inline
-scene.save("example.gif")
+scene.display()
+```
+
+<br>
+
+## The Animation Engine
+
+Building animations by hand is powerful, but suboptimal for large scale diagrams. For complex animations that require, e.g., interpolating vectors, Tesserax provides an `Animation` class that abstracts the process of procedural animation.
+
+On top of this abstraction, Tesserax provides a number of builtin animations for most common patterns. `Scene.play(...)` allows to automatically run animations and capture the corresponding steps. The easiest way to do this is to use the `Shape.animate` helper, which contains several methods to create animations on the fly for a given shape.
+
+```{python}
+import math
+from tesserax import Canvas, Rect
+from tesserax.animation import Scene
+
+# 1. Build
+with Canvas() as canvas:
+    back = Rect(100, 100, fill="white")
+    rect = Rect(50, 50, fill="orange")
+
+canvas.align().fit()
+
+# 2. Animate
+scene = Scene(canvas, fps=30)
+scene.play(rect.animate.rotate(360), duration=2)
+
+# 3. View inline
+scene.display()
 ```
