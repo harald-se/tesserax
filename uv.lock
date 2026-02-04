@@ -1884,15 +1884,13 @@ wheels = [
 
 [[package]]
 name = "tesserax"
-version = "0.6.1"
+version = "0.7.0"
 source = { editable = "." }
-dependencies = [
-    { name = "imageio", extra = ["ffmpeg"] },
-]
 
 [package.optional-dependencies]
 export = [
     { name = "cairosvg" },
+    { name = "imageio", extra = ["ffmpeg"] },
 ]
 
 [package.dev-dependencies]
@@ -1908,7 +1906,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "cairosvg", marker = "extra == 'export'", specifier = ">=2.8.2" },
-    { name = "imageio", extras = ["ffmpeg"], specifier = ">=2.37.2" },
+    { name = "imageio", extras = ["ffmpeg"], marker = "extra == 'export'", specifier = ">=2.37.2" },
 ]
 
 [package.metadata.requires-dev]
