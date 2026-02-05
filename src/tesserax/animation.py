@@ -10,7 +10,6 @@ import base64
 import imageio
 import cairosvg
 
-
 # Prevent circular imports for type hints
 from .core import Shape, Transform, HasPoints, HasStyle, HasTexT
 from .canvas import Canvas
@@ -415,10 +414,10 @@ class Animator:
         self.shape = shape
 
     # Transform
-    def translate(self, x: float, y: float) -> Animation:
+    def translate(self, dx: float = 0, dy: float = 0) -> Animation:
         target = self.shape.transform.copy()
-        target.tx = x
-        target.ty = y
+        target.tx += dx
+        target.ty += dy
         return Transformed(self.shape, target)
 
     def rotate(self, angle: float) -> Animation:
@@ -478,6 +477,7 @@ class Scene:
     def play(self, *animations: Animation, duration: float = 1.0):
         if not animations:
             return
+
         total = int(duration * self.fps)
 
         # Initialize
@@ -487,8 +487,10 @@ class Scene:
         # Loop
         for i in range(total):
             t = i / total
+
             for anim in animations:
                 anim.update(t)
+
             self.capture()
 
         # Finalize

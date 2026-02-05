@@ -172,7 +172,6 @@ def hsv(*args, **kwargs):
         return rgb(r, g, b, alpha=alpha)
 
 
-
 @overload
 def hls(
     hue: float, lightness: float, saturation: float, /, *, alpha: float = 1.0

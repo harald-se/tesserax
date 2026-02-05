@@ -36,12 +36,13 @@ The following example demonstrates how to create two shapes in a row and connect
 
 ```{python}
 import math
-from tesserax import Canvas, Square, Circle, Text, Polyline, Point, Group
+from tesserax import Canvas, Square, Circle, Text, Polyline, Point, Group, deg
 from tesserax.layout import RowLayout
+from tesserax.animation import Scene
 
 with Canvas() as canvas:
     # We use a top-level row layout
-    with RowLayout(align="end") as logo:
+    with RowLayout() as logo:
         # Left Block
         r = Square(30, fill="green", stroke="none")
 
@@ -52,7 +53,6 @@ with Canvas() as canvas:
             font="sans-serif",
             fill="navyblue",
             anchor="middle",
-            baseline="bottom",
         )
 
         # Right Circle
@@ -72,7 +72,16 @@ with Canvas() as canvas:
     )
 
 # Use fit() to frame the logo perfectly
-canvas.fit(padding=10).display()
+canvas.fit(padding=10)
+
+scene = Scene(canvas)
+scene.play(
+    r.animate.rotate(deg(90)),
+    c.animate.translate(5, 0).looping(),
+    duration=2,
+)
+
+scene.display()
 ```
 
 The `display()` method in the `Canvas` class is an IPython/Jupyter/Quarto compatible  shortcut to automatically include the rendered SVG (in all its beautiful vectorial glory) directly in a notebook. But you can also use `Canvas.save()` to generate a plain old, boring SVG file on this, and `str(canvas)` to get the actual SVG code as a plain string.
