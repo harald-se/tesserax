@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 from typing import Callable, Literal, Self
-from .core import Anchor, Point, Shape, Bounds
+from .core import Anchor, Point, Shape, Bounds, Component
 
 
 class Rect(Shape):
@@ -229,6 +229,93 @@ class Group(Shape):
         return self
 
 
+class Text(Shape):
+    """
+    Text primitive. Default anchor is 'middle' for true centering.
+    """
+
+    def __init__(
+        self,
+        content: str,
+        size: float = 12,
+        font: str = "sans-serif",
+        fill: str = "black",
+        anchor: Literal["start", "middle", "end"] = "middle",
+        baseline: Literal["top", "middle", "bottom"] = "middle",
+    ) -> None:
+        super().__init__()
+        self.content = content
+        self.size = size
+        self.font = font
+        self.fill = fill
+        self._anchor = anchor
+        self._baseline = baseline
+
+    def local(self) -> Bounds:
+        # Heuristic: average character width is ~60% of font size
+        width = len(self.content) * self.size * 0.6
+        height = self.size
+
+        # Bounds logic for "middle" anchor (which is the default now)
+        # origin (0,0) is at the center of the text.
+        if self._anchor == "middle":
+            return Bounds(-width / 2, -height / 2, width, height)
+        elif self._anchor == "start":
+            return Bounds(0, -height / 2, width, height)
+        elif self._anchor == "end":
+            return Bounds(-width, -height / 2, width, height)
+        return Bounds(0, 0, width, height)
+
+    def _render(self) -> str:
+        # Note: 'dominant-baseline="middle"' centers text vertically around y=0
+        return (
+            f'<text x="0" y="0" font-family="{self.font}" font-size="{self.size}" '
+            f'fill="{self.fill}" text-anchor="{self._anchor}" dominant-baseline="{self._baseline}">'
+            f"{self.content}</text>"
+        )
+
+
+class Spacer(Shape):
+    def __init__(self, w: float, h: float) -> None:
+        super().__init__()
+        self.w, self.h = w, h
+
+    def local(self) -> Bounds:
+        # Spacer can remain top-left based or centered.
+        # Standard layouts often assume top-left flows, but let's stick to 0,0 center for consistency?
+        # Actually spacers are usually structural and invisible, so 0,0 to w,h is fine
+        # provided layouts handle them.
+        return Bounds(0, 0, self.w, self.h)
+
+    def _render(self) -> str:
+        return ""
+
+
+class Ghost(Shape):
+    def __init__(self, target: Shape) -> None:
+        super().__init__()
+        self.target = target
+
+    def local(self) -> Bounds:
+        return self.target.local()
+
+    def _render(self) -> str:
+        return ""
+
+
+class Spring(Shape):
+    def __init__(self, flex: float = 1.0) -> None:
+        super().__init__()
+        self.flex = flex
+        self._size: float = 0.0
+
+    def local(self) -> Bounds:
+        return Bounds(0, 0, self._size, self._size)
+
+    def _render(self) -> str:
+        return ""
+
+
 class Path(Shape):
     """
     A shape defined by an SVG path data string.
@@ -343,7 +430,10 @@ class Path(Shape):
         )
 
 
-class Polyline(Path):
+# Path-based components start here
+
+
+class Polyline(Component):
     """
     A sequence of connected lines.
     Supports .center() to re-align points around the origin.
@@ -370,7 +460,6 @@ class Polyline(Path):
         self.points = points or []
         self.smoothness = smoothness
         self.closed = closed
-        self._build()
 
     def add(self, p: Point) -> Self:
         self.points.append(p)
@@ -405,7 +494,6 @@ class Polyline(Path):
         self.transform.ty += cy
 
         # 4. Rebuild path
-        self._build()
         return self
 
     def subdivide(self, times: int = 1) -> Self:
@@ -424,26 +512,22 @@ class Polyline(Path):
             if not self.closed:
                 new_pts.append(self.points[-1])
             self.points = new_pts
-        self._build()
         return self
 
     def apply(self, func: Callable[[Point], Point]) -> Self:
         self.points = [func(p) for p in self.points]
-        self._build()
         return self
 
-    def _build(self) -> None:
-        self._reset()
-        if len(self.points) < 2:
-            return
-
+    def _build(self) -> Shape:
+        shape = Path(**self._kwargs)
         s = max(0.0, min(1.0, self.smoothness))
 
+        # TODO: Refactor both parts
         if self.closed:
             p_last = self.points[-1]
             p_first = self.points[0]
             start_pt = p_last.lerp(p_first, 0.5)
-            self.jump_to(start_pt.x, start_pt.y)
+            shape.jump_to(start_pt.x, start_pt.y)
 
             n = len(self.points)
             for i in range(n):
@@ -455,16 +539,16 @@ class Polyline(Path):
                 radius = min(v_in.magnitude(), v_out.magnitude()) / 2.0 * s
 
                 if radius < 1e-6:
-                    self.line_to(curr.x, curr.y)
+                    shape.line_to(curr.x, curr.y)
                 else:
                     p_start = curr - v_in.normalize() * radius
                     p_end = curr + v_out.normalize() * radius
-                    self.line_to(p_start.x, p_start.y)
-                    self.quadratic_to(curr.x, curr.y, p_end.x, p_end.y)
-            self.close()
+                    shape.line_to(p_start.x, p_start.y)
+                    shape.quadratic_to(curr.x, curr.y, p_end.x, p_end.y)
+            shape.close()
 
         else:
-            self.jump_to(self.points[0].x, self.points[0].y)
+            shape.jump_to(self.points[0].x, self.points[0].y)
             for i in range(1, len(self.points) - 1):
                 prev_p = self.points[i - 1]
                 curr_p = self.points[i]
@@ -473,107 +557,18 @@ class Polyline(Path):
                 vec_out = next_p - curr_p
                 radius = min(vec_in.magnitude(), vec_out.magnitude()) / 2.0 * s
                 if radius < 1e-6:
-                    self.line_to(curr_p.x, curr_p.y)
+                    shape.line_to(curr_p.x, curr_p.y)
                 else:
                     p_start = curr_p - vec_in.normalize() * radius
                     p_end = curr_p + vec_out.normalize() * radius
-                    self.line_to(p_start.x, p_start.y)
-                    self.quadratic_to(curr_p.x, curr_p.y, p_end.x, p_end.y)
-            self.line_to(self.points[-1].x, self.points[-1].y)
+                    shape.line_to(p_start.x, p_start.y)
+                    shape.quadratic_to(curr_p.x, curr_p.y, p_end.x, p_end.y)
+            shape.line_to(self.points[-1].x, self.points[-1].y)
 
-    def _render(self) -> str:
-        self._build()
-        return super()._render()
+        return shape
 
 
-class Text(Shape):
-    """
-    Text primitive. Default anchor is 'middle' for true centering.
-    """
-
-    def __init__(
-        self,
-        content: str,
-        size: float = 12,
-        font: str = "sans-serif",
-        fill: str = "black",
-        anchor: Literal["start", "middle", "end"] = "middle",
-        baseline: Literal["top", "middle", "bottom"] = "middle",
-    ) -> None:
-        super().__init__()
-        self.content = content
-        self.size = size
-        self.font = font
-        self.fill = fill
-        self._anchor = anchor
-        self._baseline = baseline
-
-    def local(self) -> Bounds:
-        # Heuristic: average character width is ~60% of font size
-        width = len(self.content) * self.size * 0.6
-        height = self.size
-
-        # Bounds logic for "middle" anchor (which is the default now)
-        # origin (0,0) is at the center of the text.
-        if self._anchor == "middle":
-            return Bounds(-width / 2, -height / 2, width, height)
-        elif self._anchor == "start":
-            return Bounds(0, -height / 2, width, height)
-        elif self._anchor == "end":
-            return Bounds(-width, -height / 2, width, height)
-        return Bounds(0, 0, width, height)
-
-    def _render(self) -> str:
-        # Note: 'dominant-baseline="middle"' centers text vertically around y=0
-        return (
-            f'<text x="0" y="0" font-family="{self.font}" font-size="{self.size}" '
-            f'fill="{self.fill}" text-anchor="{self._anchor}" dominant-baseline="{self._baseline}">'
-            f"{self.content}</text>"
-        )
-
-
-class Spacer(Shape):
-    def __init__(self, w: float, h: float) -> None:
-        super().__init__()
-        self.w, self.h = w, h
-
-    def local(self) -> Bounds:
-        # Spacer can remain top-left based or centered.
-        # Standard layouts often assume top-left flows, but let's stick to 0,0 center for consistency?
-        # Actually spacers are usually structural and invisible, so 0,0 to w,h is fine
-        # provided layouts handle them.
-        return Bounds(0, 0, self.w, self.h)
-
-    def _render(self) -> str:
-        return ""
-
-
-class Ghost(Shape):
-    def __init__(self, target: Shape) -> None:
-        super().__init__()
-        self.target = target
-
-    def local(self) -> Bounds:
-        return self.target.local()
-
-    def _render(self) -> str:
-        return ""
-
-
-class Spring(Shape):
-    def __init__(self, flex: float = 1.0) -> None:
-        super().__init__()
-        self.flex = flex
-        self._size: float = 0.0
-
-    def local(self) -> Bounds:
-        return Bounds(0, 0, self._size, self._size)
-
-    def _render(self) -> str:
-        return ""
-
-
-class Line(Path):
+class Line(Component):
     def __init__(
         self,
         p1: Point | Callable[[], Point],
@@ -594,37 +589,35 @@ class Line(Path):
         self.p1 = p1
         self.p2 = p2
         self.curvature = curvature
-        self._build()
 
     def _resolve(self) -> tuple[Point, Point]:
         p1 = self.p1() if callable(self.p1) else self.p1
         p2 = self.p2() if callable(self.p2) else self.p2
         return p1, p2
 
-    def _build(self) -> None:
-        self._reset()
+    def _build(self) -> Shape:
+        shape = Path(**self._kwargs)
         start, end = self._resolve()
 
-        self.jump_to(start.x, start.y)
+        shape.jump_to(start.x, start.y)
 
         if abs(self.curvature) < 1e-4:
-            self.line_to(end.x, end.y)
+            shape.line_to(end.x, end.y)
         else:
             dx = end.x - start.x
             dy = end.y - start.y
             dist = math.sqrt(dx * dx + dy * dy)
+
             if dist == 0:
-                return
+                return shape
 
             s = self.curvature * (dist / 2.0)
             r = (s**2 + (dist / 2.0) ** 2) / (2 * abs(s))
             large_arc = 0
             sweep = 1 if self.curvature > 0 else 0
-            self.arc(r, r, 0, large_arc, sweep, end.x, end.y)
+            shape.arc(r, r, 0, large_arc, sweep, end.x, end.y)
 
-    def _render(self) -> str:
-        self._build()
-        return super()._render()
+        return shape
 
 
 class Arrow(Line):

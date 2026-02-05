@@ -265,6 +265,13 @@ class Shape(ABC):
 
         self._animator: Animator | None = None
 
+    def detach(self) -> Self:
+        if self.parent:
+            self.parent.remove(self)
+            self.parent = None
+
+        return self
+
     @property
     def animate(self):
         from .animation import Animator
@@ -363,3 +370,43 @@ class Shape(ABC):
         self.transform.ty += diff.y
 
         return self
+
+
+class Component(Shape):
+    """
+    A Shape that is composed of other Shapes.
+    Subclasses must implement build() which returns the geometric representation.
+    """
+    def __init__(self, **kwargs) -> None:
+        super().__init__()
+        self._primitive: Shape | None = None
+        self._kwargs = kwargs
+
+    @abstractmethod
+    def _build(self) -> Shape:
+        """
+        Constructs the visual representation of this component.
+        Returns a Shape (e.g., Group, Path, Rect).
+        """
+        pass
+
+    def refresh(self) -> Self:
+        """Invalidates the cache, forcing a rebuild on next use."""
+        self._primitive = None
+        return self
+
+    @property
+    def _shape(self) -> Shape:
+        if self._primitive is None:
+            self._primitive = self._build().detach()
+
+        return self._primitive
+
+    def local(self) -> Bounds:
+        return self._shape.bounds()
+
+    def _render(self) -> str:
+        # Render the built primitive.
+        # Note: The primitive's own transform is applied inside its .render()
+        # The Component's transform is applied by the caller (Shape.render)
+        return self._shape.render()

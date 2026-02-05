@@ -107,7 +107,7 @@ from tesserax.layout import RowLayout
 
 with Canvas() as canvas:
     # Create and rotate a layout
-    with RowLayout(gap=20).rotated(deg(-45)):
+    with RowLayout(gap=20).rotated(deg(45)):
         Rect(100, 50, fill="lightblue")
         Circle(30, fill="salmon")
 
@@ -138,7 +138,7 @@ with Canvas() as canvas:
         r1 = Rect(80, 40, fill="aliceblue")
         c1 = Circle(30, fill="mistyrose")
 
-    row.rotated(deg(270)).translated(50, 50)
+    row.rotated(deg(45)).translated(50, 50)
 
     # 2. Create a target rectangle outside the layout
     target = Rect(60, 60, fill="honeydew").translated(250, 0)
