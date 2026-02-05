@@ -4,6 +4,10 @@ import bisect
 import math
 import random
 import string
+import io
+import base64
+import imageio
+import cairosvg
 
 # Prevent circular imports for type hints
 if TYPE_CHECKING:
@@ -29,10 +33,12 @@ def ease_in_out_cubic(t: float) -> float:
 
 
 # --- Color Utilities (Inline for portability) ---
-def _hex_to_rgb(hex_color: str) -> tuple[float, float, float]:
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
     hex_color = hex_color.lstrip("#")
+
     if len(hex_color) == 3:
         hex_color = "".join([c * 2 for c in hex_color])
+
     return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
 
 
@@ -43,10 +49,13 @@ def _rgb_to_hex(rgb: tuple[float, float, float]) -> str:
 def _interpolate_color(c1: str, c2: str, t: float) -> str:
     if not c1 or not c2 or c1 == "none" or c2 == "none":
         return c2 if t > 0.5 else c1
+
     if not c1.startswith("#") or not c2.startswith("#"):
         return c2 if t > 0.5 else c1
+
     r1, g1, b1 = _hex_to_rgb(c1)
     r2, g2, b2 = _hex_to_rgb(c2)
+
     return _rgb_to_hex((r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t))
 
 
@@ -59,10 +68,9 @@ class Animation:
     """
 
     def __init__(
-        self, shape: Shape | None, rate_func: Callable[[float], float] = linear
+        self, rate: Callable[[float], float] = linear
     ):
-        self.shape = shape
-        self.rate_func = rate_func
+        self.rate = rate
         self.relative_weight = 1.0
         self._started = False
 
@@ -84,6 +92,7 @@ class Animation:
         """Force final state."""
         if not self._started:
             self.begin()
+
         self.update(1.0)
 
     # --- Fluent API Modifiers ---
@@ -93,43 +102,48 @@ class Animation:
         return self
 
     def rated(self, func: Callable[[float], float]) -> Self:
-        self.rate_func = func
+        self.rate = func
         return self
 
     def smoothed(self) -> Self:
         return self.rated(smooth)
 
-    def delayed(self, delay_ratio: float) -> "WrapperAnimation":
-        return WrapperAnimation(
+    def delayed(self, delay_ratio: float) -> Animation:
+        return Wrapped(
             self,
             lambda t: 0 if t < delay_ratio else (t - delay_ratio) / (1 - delay_ratio),
         )
 
-    def looping(self, times: float = 1.0) -> "WrapperAnimation":
-        wrapper = WrapperAnimation(self, lambda t: (t * times) % 1.0)
+    def looping(self, times: float = 1.0) -> Animation:
+        wrapper = Wrapped(self, lambda t: (t * times) % 1.0)
         wrapper._is_loop = True
         return wrapper
 
-    def reversed(self) -> "WrapperAnimation":
-        return WrapperAnimation(self, lambda t: 1.0 - t)
+    def reversed(self) -> Animation:
+        return Wrapped(self, lambda t: 1.0 - t)
 
     # --- Operator Overloads ---
 
-    def __mul__(self, factor: float) -> "WrapperAnimation":
+    def __mul__(self, factor: float) -> Animation:
         return self.looping(factor)
 
-    def __add__(self, other: "Animation") -> "SequentialAnimation":
-        children = self.children if isinstance(self, SequentialAnimation) else [self]
-        children.append(other)
-        return SequentialAnimation(children)
+    def __add__(self, other: Animation) -> Animation:
+        children = self.children if isinstance(self, Sequence) else [self]
+
+        if isinstance(other, Sequence):
+            children.extend(other.children)
+        else:
+            children.append(other)
+
+        return Sequence(children)
 
 
 # --- Structural Animations ---
 
 
-class WrapperAnimation(Animation):
+class Wrapped(Animation):
     def __init__(self, child: Animation, t_modifier: Callable[[float], float]):
-        super().__init__(child.shape)
+        super().__init__()
         self.child = child
         self.t_modifier = t_modifier
         self._is_loop = False
@@ -141,19 +155,22 @@ class WrapperAnimation(Animation):
 
     def update(self, t: float):
         mod_t = self.t_modifier(t)
+
         if not self._is_loop:
             mod_t = max(0.0, min(1.0, mod_t))
+
         self.child.update(mod_t)
 
 
-class SequentialAnimation(Animation):
+class Sequence(Animation):
     def __init__(self, children: list[Animation]):
-        super().__init__(children[0].shape if children else None)
+        super().__init__()
         self.children = children
 
         total_weight = sum(c.relative_weight for c in children)
         self.checkpoints = []
         current = 0.0
+
         for c in children:
             width = c.relative_weight / (total_weight or 1)
             current += width
@@ -164,12 +181,14 @@ class SequentialAnimation(Animation):
         # Lazy start: Do not start children yet
 
     def update(self, t: float):
-        t = self.rate_func(t)
+        t = self.rate(t)
         n = len(self.children)
+
         if n == 0:
             return
 
         idx = bisect.bisect_left(self.checkpoints, t)
+
         if idx >= n:
             idx = n - 1
 
@@ -182,25 +201,29 @@ class SequentialAnimation(Animation):
         # Catch up previous
         for i in range(idx):
             child = self.children[i]
+
             if not child._started:
                 child.begin()
+
             child.update(1.0)
 
         # Update active
         active = self.children[idx]
+
         if not active._started:
             active.begin()
+
         active.update(local_t)
 
 
-class LaggedStart(Animation):
+class Delayed(Animation):
     """
     Plays a group of animations with a time lag.
     lag_ratio: 0.0 (parallel) -> 1.0 (sequential)
     """
 
     def __init__(self, *animations: Animation, lag_ratio: float = 0.1, **kwargs):
-        super().__init__(animations[0].shape if animations else None, **kwargs)
+        super().__init__(**kwargs)
         self.anims = animations
         self.lag = lag_ratio
 
@@ -208,7 +231,7 @@ class LaggedStart(Animation):
         self._started = True
 
     def update(self, t: float):
-        t = self.rate_func(t)
+        t = self.rate(t)
         n = len(self.anims)
         if n == 0:
             return
@@ -236,16 +259,17 @@ class LaggedStart(Animation):
 
 class Wait(Animation):
     def __init__(self, weight: float = 1.0):
-        super().__init__(None)
+        super().__init__()
         self.weight(weight)
 
 
 # --- Property Animations ---
 
 
-class TransformAnimation(Animation):
+class Transformed(Animation):
     def __init__(self, shape: Shape, target: Transform, **kwargs):
-        super().__init__(shape, **kwargs)
+        super().__init__(**kwargs)
+        self.shape = shape
         self.target = target
         self.start_transform = None
 
@@ -253,14 +277,15 @@ class TransformAnimation(Animation):
         self.start_transform = self.shape.transform.copy()
 
     def update(self, t: float):
-        alpha = self.rate_func(t)
+        alpha = self.rate(t)
         new_trans = self.start_transform.lerp(self.target, alpha)
         self.shape.transform = new_trans
 
 
-class StyleAnimation(Animation):
+class Styled(Animation):
     def __init__(self, shape: Shape, fill=None, stroke=None, width=None, **kwargs):
-        super().__init__(shape, **kwargs)
+        super().__init__(**kwargs)
+        self.shape = shape
         self.target_fill = fill
         self.target_stroke = stroke
         self.target_width = width
@@ -274,7 +299,7 @@ class StyleAnimation(Animation):
         self.start_width = getattr(self.shape, "width", 1.0)
 
     def update(self, t: float):
-        alpha = self.rate_func(t)
+        alpha = self.rate(t)
         if self.target_width is not None:
             self.shape.width = (
                 self.start_width + (self.target_width - self.start_width) * alpha
@@ -292,28 +317,30 @@ class StyleAnimation(Animation):
 # --- Specialized Animations ---
 
 
-class Write(Animation):
+class Written(Animation):
     def __init__(self, shape: Shape, **kwargs):
-        super().__init__(shape, **kwargs)
+        super().__init__(**kwargs)
+        self.shape = shape
         self.full_text = getattr(shape, "text", "")
 
     def _start(self):
         self.full_text = getattr(self.shape, "text", "")
 
     def update(self, t: float):
-        alpha = self.rate_func(t)
+        alpha = self.rate(t)
         count = int(alpha * len(self.full_text))
         self.shape.text = self.full_text[:count]
 
 
-class Scramble(Animation):
+class Scrambled(Animation):
     def __init__(self, shape: Shape, seed: int = 42, **kwargs):
-        super().__init__(shape, **kwargs)
+        super().__init__(**kwargs)
+        self.shape = shape
         self.full_text = getattr(shape, "text", "")
         self.rng = random.Random(seed)
 
     def update(self, t: float):
-        alpha = self.rate_func(t)
+        alpha = self.rate(t)
         total = len(self.full_text)
         resolved = int(alpha * total)
 
@@ -324,9 +351,10 @@ class Scramble(Animation):
         self.shape.text = "".join(result + scramble)
 
 
-class VertexMorph(Animation):
+class Morphed(Animation):
     def __init__(self, shape: Shape, target_points: list, **kwargs):
-        super().__init__(shape, **kwargs)
+        super().__init__(**kwargs)
+        self.shape = shape
         self.target_points = target_points
         self.start_points = []
         # Lazy import for Point to avoid circular dependency issues at module level
@@ -352,7 +380,7 @@ class VertexMorph(Animation):
     def update(self, t: float):
         if not self.start_points:
             return
-        alpha = self.rate_func(t)
+        alpha = self.rate(t)
 
         new_pts = []
         for s, e in zip(self.start_points, self.target_points):
@@ -365,14 +393,15 @@ class VertexMorph(Animation):
             self.shape._build()
 
 
-class FollowPath(Animation):
+class Following(Animation):
     def __init__(self, shape: Shape, path: Shape, rotate_along: bool = False, **kwargs):
-        super().__init__(shape, **kwargs)
+        super().__init__(**kwargs)
+        self.shape = shape
         self.path = path
         self.rotate_along = rotate_along
 
     def update(self, t: float):
-        alpha = self.rate_func(t)
+        alpha = self.rate(t)
 
         # Requires path to have point_at(t) -> Point
         if not hasattr(self.path, "point_at"):
@@ -409,55 +438,50 @@ class Animator:
         self.shape = shape
 
     # Transform
-    def translate(self, x: float, y: float) -> TransformAnimation:
+    def translate(self, x: float, y: float) -> Animation:
         target = self.shape.transform.copy()
         target.tx = x
         target.ty = y
-        return TransformAnimation(self.shape, target)
+        return Transformed(self.shape, target)
 
-    def rotate(self, angle: float) -> TransformAnimation:
+    def rotate(self, angle: float) -> Animation:
         target = self.shape.transform.copy()
         target.rotation += angle
-        return TransformAnimation(self.shape, target)
+        return Transformed(self.shape, target)
 
-    def scale(self, factor: float) -> TransformAnimation:
+    def scale(self, factor: float) -> Animation:
         target = self.shape.transform.copy()
         target.sx *= factor
         target.sy *= factor
-        return TransformAnimation(self.shape, target)
+        return Transformed(self.shape, target)
 
     # Style
-    def fill(self, color: str) -> StyleAnimation:
-        return StyleAnimation(self.shape, fill=color)
+    def fill(self, color: str) -> Animation:
+        return Styled(self.shape, fill=color)
 
-    def stroke(self, color: str) -> StyleAnimation:
-        return StyleAnimation(self.shape, stroke=color)
+    def stroke(self, color: str) -> Animation:
+        return Styled(self.shape, stroke=color)
 
-    def style(self, **kwargs) -> StyleAnimation:
-        return StyleAnimation(self.shape, **kwargs)
+    def style(self, **kwargs) -> Animation:
+        return Styled(self.shape, **kwargs)
 
     # Text
-    def write(self) -> Write:
-        return Write(self.shape)
+    def write(self) -> Animation:
+        return Written(self.shape)
 
-    def scramble(self) -> Scramble:
-        return Scramble(self.shape)
+    def scramble(self) -> Animation:
+        return Scrambled(self.shape)
 
     # Geometry
-    def morph(self, target) -> VertexMorph:
+    def morph(self, target) -> Animation:
         pts = target.points if hasattr(target, "points") else target
-        return VertexMorph(self.shape, pts)
+        return Morphed(self.shape, pts)
 
-    def follow(self, path: Shape, rotate: bool = False) -> FollowPath:
-        return FollowPath(self.shape, path, rotate_along=rotate)
+    def follow(self, path: Shape, rotate: bool = False) -> Animation:
+        return Following(self.shape, path, rotate_along=rotate)
 
 
-# --- Scene Class (Minimal for execution) ---
-import io
-import base64
-from typing import BinaryIO
-import imageio
-import cairosvg
+# --- Scene Class ---
 
 
 class Scene:
