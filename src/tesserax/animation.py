@@ -1,5 +1,6 @@
 from __future__ import annotations
-from typing import Callable, Self, TYPE_CHECKING, runtime_checkable
+from abc import ABC, abstractmethod
+from typing import Callable, Self
 import bisect
 import math
 import random
@@ -11,9 +12,8 @@ import cairosvg
 
 
 # Prevent circular imports for type hints
-if TYPE_CHECKING:
-    from .core import Shape, Transform, Point
-    from .canvas import Canvas
+from .core import Shape, Transform, HasPoints, HasStyle, HasTexT
+from .canvas import Canvas
 
 
 # --- Easing Functions ---
@@ -33,44 +33,15 @@ def ease_in_out_cubic(t: float) -> float:
     return 3 * t * t - 2 * t * t * t if t < 0.5 else 1 - (-2 * t + 2) ** 3 / 2
 
 
-# --- Color Utilities (Inline for portability) ---
-def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
-    hex_color = hex_color.lstrip("#")
-
-    if len(hex_color) == 3:
-        hex_color = "".join([c * 2 for c in hex_color])
-
-    return tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
-
-
-def _rgb_to_hex(rgb: tuple[float, float, float]) -> str:
-    return "#{:02x}{:02x}{:02x}".format(int(rgb[0]), int(rgb[1]), int(rgb[2]))
-
-
-def _interpolate_color(c1: str, c2: str, t: float) -> str:
-    if not c1 or not c2 or c1 == "none" or c2 == "none":
-        return c2 if t > 0.5 else c1
-
-    if not c1.startswith("#") or not c2.startswith("#"):
-        return c2 if t > 0.5 else c1
-
-    r1, g1, b1 = _hex_to_rgb(c1)
-    r2, g2, b2 = _hex_to_rgb(c2)
-
-    return _rgb_to_hex((r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t))
-
-
 # --- Core Animation Class ---
 
 
-class Animation:
+class Animation(ABC):
     """
     Base class for logic that modifies a shape over a normalized time t [0, 1].
     """
 
-    def __init__(
-        self, rate: Callable[[float], float] = linear
-    ):
+    def __init__(self, rate: Callable[[float], float] = linear):
         self.rate = rate
         self.relative_weight = 1.0
         self._started = False
@@ -87,6 +58,13 @@ class Animation:
 
     def update(self, t: float) -> None:
         """Apply changes based on normalized progress t."""
+        if not self._started:
+            raise TypeError("You need to call begin() first.")
+
+        self._update(self.rate(t))
+
+    @abstractmethod
+    def _update(self, t: float):
         pass
 
     def finish(self) -> None:
@@ -154,7 +132,7 @@ class Wrapped(Animation):
     def begin(self):
         self.child.begin()
 
-    def update(self, t: float):
+    def _update(self, t: float):
         mod_t = self.t_modifier(t)
 
         if not self._is_loop:
@@ -277,14 +255,16 @@ class Transformed(Animation):
     def _start(self):
         self.start_transform = self.shape.transform.copy()
 
-    def update(self, t: float):
-        alpha = self.rate(t)
-        new_trans = self.start_transform.lerp(self.target, alpha)
+    def _update(self, t: float):
+        if self.start_transform is None:
+            raise TypeError("You need to call begin() first.")
+
+        new_trans = self.start_transform.lerp(self.target, t)
         self.shape.transform = new_trans
 
 
 class Styled(Animation):
-    def __init__(self, shape: Shape, fill=None, stroke=None, width=None, **kwargs):
+    def __init__(self, shape: HasStyle, fill=None, stroke=None, width=None, **kwargs):
         super().__init__(**kwargs)
         self.shape = shape
         self.target_fill = fill
@@ -295,31 +275,34 @@ class Styled(Animation):
         self.start_width = None
 
     def _start(self):
-        self.start_fill = getattr(self.shape, "fill", "none")
-        self.start_stroke = getattr(self.shape, "stroke", "none")
-        self.start_width = getattr(self.shape, "width", 1.0)
+        self.start_fill = self.shape.fill
+        self.start_stroke = self.shape.stroke
+        self.start_width = self.shape.width
 
-    def update(self, t: float):
-        alpha = self.rate(t)
+    def _update(self, t: float):
+
+        if (
+            self.start_fill is None
+            or self.start_stroke is None
+            or self.start_width is None
+        ):
+            raise TypeError("You need to call begin() first.")
+
         if self.target_width is not None:
             self.shape.width = (
-                self.start_width + (self.target_width - self.start_width) * alpha
+                self.start_width + (self.target_width - self.start_width) * t
             )
         if self.target_fill is not None:
-            self.shape.fill = _interpolate_color(
-                self.start_fill, self.target_fill, alpha
-            )
+            self.shape.fill = self.start_fill.towards(self.target_fill, t)
         if self.target_stroke is not None:
-            self.shape.stroke = _interpolate_color(
-                self.start_stroke, self.target_stroke, alpha
-            )
+            self.shape.stroke = self.start_stroke.towards(self.target_stroke, t)
 
 
 # --- Specialized Animations ---
 
 
 class Written(Animation):
-    def __init__(self, shape: Shape, **kwargs):
+    def __init__(self, shape: HasTexT, **kwargs):
         super().__init__(**kwargs)
         self.shape = shape
         self.full_text = getattr(shape, "text", "")
@@ -327,23 +310,21 @@ class Written(Animation):
     def _start(self):
         self.full_text = getattr(self.shape, "text", "")
 
-    def update(self, t: float):
-        alpha = self.rate(t)
-        count = int(alpha * len(self.full_text))
+    def _update(self, t: float):
+        count = int(t * len(self.full_text))
         self.shape.text = self.full_text[:count]
 
 
 class Scrambled(Animation):
-    def __init__(self, shape: Shape, seed: int = 42, **kwargs):
+    def __init__(self, shape: HasTexT, seed: int = 42, **kwargs):
         super().__init__(**kwargs)
         self.shape = shape
         self.full_text = getattr(shape, "text", "")
         self.rng = random.Random(seed)
 
-    def update(self, t: float):
-        alpha = self.rate(t)
+    def _update(self, t: float):
         total = len(self.full_text)
-        resolved = int(alpha * total)
+        resolved = int(t * total)
 
         result = list(self.full_text[:resolved])
         remaining = total - resolved
@@ -353,7 +334,7 @@ class Scrambled(Animation):
 
 
 class Morphed(Animation):
-    def __init__(self, shape: Shape, target_points: list, **kwargs):
+    def __init__(self, shape: HasPoints, target_points: list, **kwargs):
         super().__init__(**kwargs)
         self.shape = shape
         self.target_points = target_points
@@ -378,20 +359,17 @@ class Morphed(Animation):
                 f"Warning: Morph mismatch {len(self.start_points)} vs {len(self.target_points)}"
             )
 
-    def update(self, t: float):
+    def _update(self, t: float):
         if not self.start_points:
             return
-        alpha = self.rate(t)
 
         new_pts = []
         for s, e in zip(self.start_points, self.target_points):
-            nx = s.x + (e.x - s.x) * alpha
-            ny = s.y + (e.y - s.y) * alpha
+            nx = s.x + (e.x - s.x) * t
+            ny = s.y + (e.y - s.y) * t
             new_pts.append(self._Point(nx, ny))
 
         self.shape.points = new_pts
-        if hasattr(self.shape, "_build"):
-            self.shape._build()
 
 
 class Following(Animation):
@@ -401,9 +379,7 @@ class Following(Animation):
         self.path = path
         self.rotate_along = rotate_along
 
-    def update(self, t: float):
-        alpha = self.rate(t)
-
+    def _update(self, t: float):
         # Requires path to have point_at(t) -> Point
         if not hasattr(self.path, "point_at"):
             return
@@ -417,12 +393,12 @@ class Following(Animation):
         if self.rotate_along:
             epsilon = 0.01
             # Look ahead for tangent
-            next_t = min(1.0, alpha + epsilon)
+            next_t = min(1.0, t + epsilon)
             # If we are at the end, look backward
-            if next_t == alpha:
-                next_t = alpha
-                alpha = max(0.0, alpha - epsilon)
-                target_point = self.path.point_at(alpha)
+            if next_t == t:
+                next_t = t
+                t = max(0.0, t - epsilon)
+                target_point = self.path.point_at(t)
 
             next_p = self.path.point_at(next_t)
             angle = math.atan2(next_p.y - target_point.y, next_p.x - target_point.x)

@@ -3,7 +3,8 @@ import copy
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 import math
-from typing import Literal, Self, TYPE_CHECKING
+from typing import Literal, Protocol, Self, TYPE_CHECKING
+from .color import Color, Colors
 
 if TYPE_CHECKING:
     from .base import Group
@@ -253,7 +254,9 @@ class Bounds:
 
 
 class Shape(ABC):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+    ) -> None:
         from .base import Group
         from .animation import Animator
 
@@ -410,3 +413,20 @@ class Component(Shape):
         # Note: The primitive's own transform is applied inside its .render()
         # The Component's transform is applied by the caller (Shape.render)
         return self._shape.render()
+
+
+# Protocols for different types of shapes
+
+
+class HasStyle(Protocol):
+    fill: Color
+    stroke: Color
+    width: float
+
+
+class HasTexT(Protocol):
+    text: str
+
+
+class HasPoints(Protocol):
+    points: list[Point]
