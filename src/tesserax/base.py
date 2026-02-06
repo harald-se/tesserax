@@ -521,7 +521,7 @@ class Polyline(Component):
             if not self.closed:
                 new_pts.append(self.points[-1])
             self.points = new_pts
-        return self
+        return self.refresh()
 
     def simplify(self, tolerance: float = 1e-2) -> Self:
         """

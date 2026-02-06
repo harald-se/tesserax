@@ -32,21 +32,56 @@ pip install tesserax[export]
 
 ## Quick Start
 
-The following example demonstrates how to create two shapes in a row and connect them with an arrow using the anchor system.
+To showcase how **Tesserax** works, we'll build a small illustration step by step. We will start with a blank canvas and gradually add layers of complexity, from simple text to automated layouts and animations.
+
+### Step 1: The Canvas and Text
+
+First, we initialize the `Canvas` and add the central `Text` element. The `Canvas` acts as our root container. By using the `with` statement, any shape we create is automatically added to the canvas context.
 
 ```{python}
-import math
-from tesserax import Canvas, Square, Circle, Text, Polyline, Point, Group, deg
-from tesserax.layout import RowLayout
-from tesserax.animation import Scene
+from tesserax import Canvas, Text
 
 with Canvas() as canvas:
-    # We use a top-level row layout
-    with RowLayout() as logo:
-        # Left Block
-        r = Square(30, fill="green", stroke="none")
+    t = Text(
+        "tesserax",
+        size=48,
+        font="sans-serif",
+        fill="navyblue",
+        anchor="middle",
+    )
 
-        # Center Text
+canvas.fit().display()
+```
+
+The method `Canvas.fit()` ensures the canvas is centered around the bounding box of the illustration. The `display()` method is an IPython/Jupyter/Quarto compatible  shortcut to automatically include the rendered SVG (in all its beautiful vectorial glory) directly in a notebook. But you can also use `Canvas.save()` to generate a plain old, boring SVG file on this, and `str(canvas)` to get the actual SVG code as a plain string.
+
+### Step 2: Adding Geometric Shapes
+
+Next, we add a `Square` and a `Circle`. At this stage, we create them without specific coordinates; they will naturally overlap at the origin until we arrange them. We can manually translate/rotate/scale them with a fluent interface.
+
+```{python}
+from tesserax import Square, Circle
+
+with canvas:
+    r = Square(30, fill="green", stroke="none").translated(-120, 0)
+    c = Circle(20, fill="red", stroke="none").translated(120, 0)
+
+canvas.fit().display()
+```
+
+We must call `Canvas.fit()` again to re-center the canvas.
+
+### Step 3: Distribution with Groups
+
+We can arrange these elements more easily with a `Group`. Groups can be created explicitely and elementes added using `Group.add`, or automatically using a `with Group()` statement, or created implicitely with `shape + shape`.
+Once created, a `Group` can organize its inner shapes with `align` and `distribute`.
+
+```{python}
+from tesserax import Group
+
+with Canvas() as canvas:
+    with Group() as g:
+        r = Square(30, fill="green", stroke="none")
         t = Text(
             "tesserax",
             size=48,
@@ -54,38 +89,96 @@ with Canvas() as canvas:
             fill="navyblue",
             anchor="middle",
         )
-
-        # Right Circle
         c = Circle(20, fill="red", stroke="none")
 
-    # Create the "Squiggly" Underline
-    Polyline(
-        [
-            r.anchor("bottom").dy(10),
-            c.anchor("bottom").dy(10),
-        ],
+    g.align("horizontal").distribute("horizontal")
+
+canvas.fit(10).display()
+```
+
+Groups can also have a transformation, which is stacked with their childrens'. This allows creating complex hierarchical layouts without ever computing explicit pixel positions.
+
+### Step 3a: Using Layouts
+
+An alternative, automatic way to align and distribute items is to use `Layout` subclasses. For example, the `RowLayout` implements the exact same logic we just did manually.
+
+```{python}
+from tesserax.layout import RowLayout
+
+with Canvas() as canvas:
+    with RowLayout() as logo:
+        r = Square(30, fill="green", stroke="none")
+        t = Text(
+            "tesserax",
+            size=48,
+            font="sans-serif",
+            fill="navyblue",
+            anchor="middle",
+        )
+        c = Circle(20, fill="red", stroke="none")
+
+canvas.fit().display()
+```
+
+Layouts are basically `Group` subclasses that perform some sort of automatic organization before rendering.
+
+### Step 4: Adding the Underline
+
+To add some flair, we use the **semantic anchor system** to draw a `Polyline` that connects the bottom of the square to the bottom of the circle.
+
+```{python}
+from tesserax import Polyline
+
+with canvas:
+    p = Polyline(
+        points=[r.anchor("bottom").dy(10), c.anchor("bottom").dy(10)],
         smoothness=1.0,
         stroke="black",
-        marker_end="arrow",
-    ).subdivide(5).apply(
-        lambda p: p.dy(math.sin((p.x / logo.bounds().width * 20 + 5)) * 5)
+        marker_end="arrow"
     )
 
-# Use fit() to frame the logo perfectly
-canvas.fit(padding=10)
+canvas.fit(5).display()
+```
 
-# Create a simple animation
+The `arrow` marker is a default arrow-like shape declared in the canvas, but you can add custom markers using arbitrary shapes, and use them for all lines.
+
+The `Polyline` is a type of `Component`, a very powerful kind of shape that allows encapsulating and reusing complex drawing logic.
+
+### Step 5: Making a Squiggle Line
+
+To add some fancy squiggles, we will use some of the powerful operations in `Polyline`. The first is `subdivide` which creates new points in the mid-point of every segment, recursively. Then other operation is `apply` which accepts a function to modify each point, and can be used to draw mathematical functions.
+
+```{python}
+import math
+
+p.subdivide(5).apply(
+    lambda p: p.dy(math.sin((p.x / logo.bounds().width * 20 + 5)) * 5)
+)
+
+canvas.fit(10).display()
+```
+
+The `Shape.bounds()` method computes an axis-align bounding box, in this case, to the whole group that conforms the logo (our previous `RowLayout`).
+
+### Step 6: Animating the Logo
+
+Tesserax also has a powerful, declarative animation system. In this example we use a `Scene` to bring the logo to life. We will rotate the square 90 degrees and make the circle bounce back and forth using a translation loop (using the `+` operator creates a sequence of animations).
+
+```{python}
+from tesserax.animation import Scene
+from tesserax import deg
+
 scene = Scene(canvas)
 scene.play(
     r.animate.rotate(deg(90)),
-    c.animate.translate(5, 0).looping(),
+    c.animate.translate(-10, 0) + c.animate.translate(0, 0),
     duration=1,
 )
 
 scene.display()
 ```
 
-The `display()` method in the `Canvas` class is an IPython/Jupyter/Quarto compatible  shortcut to automatically include the rendered SVG (in all its beautiful vectorial glory) directly in a notebook. But you can also use `Canvas.save()` to generate a plain old, boring SVG file on this, and `str(canvas)` to get the actual SVG code as a plain string.
+The `Scene.play` method accepts a list of `Animation` which can be constructed manually or using the `Shape.animate` fluent API for common animations. As you can see, `Scene.display` renders the animation to a GIF ready for embedding, but you can also render MP4 videos.
 
 ## Core Components
 

@@ -150,8 +150,7 @@ class Sequence(Animation):
         self._started = True
         # Lazy start: Do not start children yet
 
-    def update(self, t: float):
-        t = self.rate(t)
+    def _update(self, t: float):
         n = len(self.children)
 
         if n == 0:
