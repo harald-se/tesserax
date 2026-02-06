@@ -151,7 +151,7 @@ To add some fancy squiggles, we will use some of the powerful operations in `Pol
 ```{python}
 import math
 
-p.subdivide(5).apply(
+p.subdivide(7).apply(
     lambda p: p.dy(math.sin((p.x / logo.bounds().width * 20 + 5)) * 5)
 )
 
@@ -172,6 +172,11 @@ scene = Scene(canvas)
 scene.play(
     r.animate.rotate(deg(90)),
     c.animate.translate(-10, 0) + c.animate.translate(0, 0),
+    p.animate.warp(
+        lambda p, t: p.dy(
+            math.sin(p.x / logo.bounds().width * 20 + t * math.pi * 2) * 5
+        )
+    ),
     duration=1,
 )
 

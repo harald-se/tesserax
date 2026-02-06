@@ -11,7 +11,7 @@ import imageio
 import cairosvg
 
 # Prevent circular imports for type hints
-from .core import Shape, Transform, HasPoints, HasStyle, HasTexT
+from .core import Point, Shape, Transform, HasPoints, HasStyle, HasTexT
 from .canvas import Canvas
 
 
@@ -395,6 +395,34 @@ class Following(Animation):
             self.shape.transform.rotation = angle
 
 
+class Warped(Animation):
+    """
+    Applies a time-dependent transformation function to a shape's points.
+    The function should accept a Point and the current time t [0, 1].
+    """
+    def __init__(self, shape: HasPoints, func: Callable[[Point, float], Point], **kwargs):
+        super().__init__(**kwargs)
+        self.shape = shape
+        self.func = func
+        self.start_points: list[Point] = []
+
+    def _start(self):
+        # Capture the points exactly as they are when the animation begins
+        if hasattr(self.shape, "points"):
+            self.start_points = list(self.shape.points)
+
+    def _update(self, t: float):
+        if not self.start_points:
+            return
+
+        # Map the original points through the function at the current time t
+        self.shape.points = [self.func(p, t) for p in self.start_points]
+
+        # If the shape is a Component (like Polyline), it may need to rebuild its path
+        if hasattr(self.shape, "refresh"):
+            self.shape.refresh()
+
+
 # --- Factory Class ---
 
 
@@ -447,6 +475,11 @@ class Animator:
     def follow(self, path: Shape, rotate: bool = False) -> Animation:
         return Following(self.shape, path, rotate_along=rotate)
 
+    def warp(self, func: Callable[[Point, float], Point]) -> Animation:
+        """
+        Creates a warp animation using a function that maps (Point, t) -> Point.
+        """
+        return Warped(self.shape, func)
 
 # --- Scene Class ---
 
